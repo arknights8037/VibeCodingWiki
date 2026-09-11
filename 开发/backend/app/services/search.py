@@ -1,0 +1,96 @@
+import re
+from datetime import datetime
+
+from sqlalchemy import Select, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models import Difficulty, PublicationStatus, Tag, WikiArticle, article_tags
+
+TOKEN_RE = re.compile(r'"([^"]{1,80})"|([\w\u4e00-\u9fff-]{1,80})')
+
+
+def safe_fts_query(value: str) -> str:
+    tokens: list[str] = []
+    for phrase, word in TOKEN_RE.findall(value[:300]):
+        token = (phrase or word).replace('"', '""').strip()
+        if token:
+            tokens.append(f'"{token}"')
+    return " AND ".join(tokens[:12])
+
+
+async def search_wiki_articles(
+    session: AsyncSession,
+    *,
+    q: str = "",
+    phrase: str = "",
+    category: str | None = None,
+    tags: list[str] | None = None,
+    difficulty: Difficulty | None = None,
+    updated_after: datetime | None = None,
+    sort: str = "relevance",
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[WikiArticle], int]:
+    filters = [WikiArticle.status == PublicationStatus.published]
+    statement: Select = select(WikiArticle).options(
+        selectinload(WikiArticle.category), selectinload(WikiArticle.tags)
+    )
+    if category:
+        filters.append(WikiArticle.category.has(slug=category))
+    if difficulty:
+        filters.append(WikiArticle.difficulty == difficulty)
+    if updated_after:
+        filters.append(WikiArticle.updated_at >= updated_after)
+    if tags:
+        unique_tags = sorted(set(tags[:12]))
+        articles_with_all_tags = (
+            select(article_tags.c.article_id)
+            .join(Tag, Tag.id == article_tags.c.tag_id)
+            .where(Tag.slug.in_(unique_tags))
+            .group_by(article_tags.c.article_id)
+            .having(func.count(func.distinct(Tag.slug)) == len(unique_tags))
+        )
+        filters.append(WikiArticle.id.in_(articles_with_all_tags))
+
+    ids: list[int] | None = None
+    phrase_part = f'"{phrase[:80]}"' if phrase.strip() else ""
+    fts_query = safe_fts_query(" ".join(part for part in (q, phrase_part) if part))
+    if fts_query:
+        rows = await session.execute(
+            text("SELECT rowid FROM wiki_fts WHERE wiki_fts MATCH :q ORDER BY bm25(wiki_fts)"),
+            {"q": fts_query},
+        )
+        ids = [int(row[0]) for row in rows]
+        if ids:
+            filters.append(WikiArticle.id.in_(ids))
+        else:
+            like = f"%{(phrase or q)[:100]}%"
+            filters.append(
+                or_(
+                    WikiArticle.title.like(like),
+                    WikiArticle.summary.like(like),
+                    WikiArticle.body_markdown.like(like),
+                )
+            )
+
+    statement = statement.where(*filters).distinct()
+    count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
+    total = int(await session.scalar(count_statement) or 0)
+
+    if sort == "updated_desc":
+        statement = statement.order_by(WikiArticle.updated_at.desc())
+    elif sort == "title_asc":
+        statement = statement.order_by(WikiArticle.title.asc())
+    elif ids:
+        ordering = {item_id: index for index, item_id in enumerate(ids)}
+        statement = statement.order_by(WikiArticle.updated_at.desc())
+    else:
+        statement = statement.order_by(WikiArticle.updated_at.desc())
+
+    result = list(
+        (await session.scalars(statement.offset((page - 1) * page_size).limit(page_size))).unique()
+    )
+    if ids and sort == "relevance":
+        result.sort(key=lambda article: ordering.get(article.id, len(ordering)))
+    return result, total

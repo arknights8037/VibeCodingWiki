@@ -1,0 +1,21 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+data/
+node_modules/
+dist/
+playwright-report/
+test-results/
+*.tsbuildinfo
+# vue-tsc may emit configuration artifacts beside the TypeScript configs.
+/开发/frontend/*.js
+/开发/frontend/*.d.ts
+.DS_Store
+Thumbs.db
+.codex-build/
+文档/rendered/
+文档/*-debug.pptx
