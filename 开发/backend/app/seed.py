@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.database import SessionLocal, init_database
@@ -21,13 +21,35 @@ from app.models import (
     WikiArticle,
 )
 from app.security import hash_password
-from app.seed_data import COURSES, WIKI
+from app.seed_data import COURSES, RETIRED_COURSE_SLUGS, RETIRED_WIKI_SLUGS, WIKI
+from app.services.lesson_content import with_legacy_cards
 from app.services.skills import build_skill_archive
 
 
 async def seed() -> None:
     await init_database()
     async with SessionLocal() as session:
+        # Keep historical learning progress while removing retired teaching content
+        # from public pages, search results, and MCP resources.
+        retired_courses = select(Course.id).where(Course.slug.in_(RETIRED_COURSE_SLUGS))
+        await session.execute(
+            update(Lesson)
+            .where(Lesson.course_id.in_(retired_courses))
+            .values(status=PublicationStatus.archived)
+        )
+        await session.execute(
+            update(Course)
+            .where(Course.slug.in_(RETIRED_COURSE_SLUGS))
+            .values(status=PublicationStatus.archived)
+        )
+        await session.execute(
+            update(WikiArticle)
+            .where(
+                WikiArticle.slug.in_(RETIRED_WIKI_SLUGS),
+                WikiArticle.status != PublicationStatus.archived,
+            )
+            .values(status=PublicationStatus.archived)
+        )
         admin = await session.scalar(select(User).where(User.email == settings.admin_email.lower()))
         if not admin:
             admin = User(
@@ -49,12 +71,14 @@ async def seed() -> None:
                     prerequisites="按课程顺序学习；第一模块无前置要求。"
                     if order_index > 1
                     else "无",
-                    difficulty=Difficulty.beginner if order_index < 6 else Difficulty.intermediate,
+                    difficulty=Difficulty.beginner if order_index < 5 else Difficulty.intermediate,
                     order_index=order_index,
                     status=PublicationStatus.published,
                 )
                 session.add(course)
                 await session.flush()
+            else:
+                course.order_index = order_index
             lesson_slug = f"{item['slug']}-lesson"
             if not await session.scalar(select(Lesson).where(Lesson.slug == lesson_slug)):
                 session.add(
@@ -62,10 +86,10 @@ async def seed() -> None:
                         course_id=course.id,
                         slug=lesson_slug,
                         title=item["title"],
-                        objective=item["objective"],
-                        body_markdown=item["body"],
-                        practice=item["practice"],
-                        completion_criteria=item["criteria"],
+                        objective="",
+                        body_markdown=with_legacy_cards(item["body"], item["objective"], item["practice"], item["criteria"]),
+                        practice="",
+                        completion_criteria="",
                         estimated_minutes=35,
                         order_index=1,
                         status=PublicationStatus.published,

@@ -48,7 +48,13 @@ async def search_wiki(
 
 @router.get("/categories", response_model=list[CategoryOut])
 async def list_categories(session: AsyncSession = Depends(get_session)) -> list[Category]:
-    return list(await session.scalars(select(Category).order_by(Category.name)))
+    return list(
+        await session.scalars(
+            select(Category)
+            .where(Category.articles.any(WikiArticle.status == PublicationStatus.published))
+            .order_by(Category.name)
+        )
+    )
 
 
 @router.get("/{slug}", response_model=WikiDetail)

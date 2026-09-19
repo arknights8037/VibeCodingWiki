@@ -3,40 +3,31 @@ import { onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import MarkdownBody from "@/components/MarkdownBody.vue";
 import { api, apiError } from "@/services/api";
-import { useAuthStore } from "@/stores/auth";
 import type { Course } from "@/types";
 
 const route = useRoute();
-const auth = useAuthStore();
 const course = ref<Course | null>(null);
 const error = ref("");
-const completed = ref(false);
+const loading = ref(true);
 
-onMounted(async () => {
+async function load() {
+  loading.value = true; error.value = "";
   try {
     course.value = (
       await api.get<Course>(`/courses/${route.params.slug}`)
     ).data;
   } catch (reason) {
     error.value = apiError(reason);
-  }
-});
-
-async function markComplete() {
-  const lesson = course.value?.lessons[0];
-  if (!lesson) return;
-  try {
-    await api.post(`/courses/lessons/${lesson.slug}/complete`);
-    completed.value = true;
-  } catch (reason) {
-    error.value = apiError(reason);
-  }
+  } finally { loading.value = false; }
 }
+onMounted(load);
+
 </script>
 
 <template>
   <div class="page narrow">
-    <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="loading" role="status">正在加载正文…</p>
+    <el-alert v-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">重新加载</el-button><RouterLink to="/courses">返回课程列表</RouterLink></el-alert>
     <template v-if="course">
       <header class="article-head">
         <div class="eyebrow">
@@ -45,28 +36,9 @@ async function markComplete() {
         <h1>{{ course.title }}</h1>
         <p class="lede">{{ course.summary }}</p>
       </header>
-      <template v-for="lesson in course.lessons" :key="lesson.id">
-        <p>
-          <strong>学习目标：</strong>{{ lesson.objective }}　预计
-          {{ lesson.estimated_minutes }} 分钟
-        </p>
+      <section v-for="lesson in course.lessons" :key="lesson.id" :id="`lesson-${lesson.slug}`">
         <MarkdownBody :source="lesson.body_markdown" />
-        <section class="practice-block">
-          <h2>实践任务</h2>
-          <p>{{ lesson.practice }}</p>
-          <h3>完成标准</h3>
-          <p>{{ lesson.completion_criteria }}</p>
-        </section>
-      </template>
-      <button
-        v-if="auth.signedIn && !completed"
-        class="primary-button"
-        type="button"
-        @click="markComplete"
-      >
-        标记为已完成
-      </button>
-      <p v-if="completed">已记录本模块进度。</p>
+      </section>
     </template>
   </div>
 </template>

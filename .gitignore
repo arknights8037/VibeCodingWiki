@@ -17,5 +17,8 @@ test-results/
 .DS_Store
 Thumbs.db
 .codex-build/
+.local/
 文档/rendered/
 文档/*-debug.pptx
+
+开发/frontend/public/vendor/

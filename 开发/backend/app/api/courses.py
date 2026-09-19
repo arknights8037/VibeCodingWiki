@@ -16,8 +16,8 @@ async def list_courses(session: AsyncSession = Depends(get_session)) -> list[Cou
     statement = (
         select(Course)
         .where(Course.status == PublicationStatus.published)
-        .options(selectinload(Course.lessons))
-        .order_by(Course.order_index)
+        .options(selectinload(Course.lessons.and_(Lesson.status == PublicationStatus.published)))
+        .order_by(Course.order_index, Course.id)
     )
     return list(await session.scalars(statement))
 
@@ -27,13 +27,10 @@ async def get_course(slug: str, session: AsyncSession = Depends(get_session)) ->
     course = await session.scalar(
         select(Course)
         .where(Course.slug == slug, Course.status == PublicationStatus.published)
-        .options(selectinload(Course.lessons))
+        .options(selectinload(Course.lessons.and_(Lesson.status == PublicationStatus.published)))
     )
     if not course:
         raise HTTPException(status_code=404, detail="课程不存在")
-    course.lessons = [
-        lesson for lesson in course.lessons if lesson.status == PublicationStatus.published
-    ]
     return course
 
 

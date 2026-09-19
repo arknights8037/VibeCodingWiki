@@ -13,6 +13,10 @@ export interface User {
   role: Role;
   is_active: boolean;
   created_at: string;
+  github_username?: string | null;
+  gitee_username?: string | null;
+  real_name?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface Lesson {
@@ -35,6 +39,8 @@ export interface Course {
   prerequisites: string;
   difficulty: string;
   order_index: number;
+  is_standalone: boolean;
+  directory_collapsible: boolean;
   lessons: Lesson[];
 }
 
@@ -45,9 +51,20 @@ export interface WikiArticle {
   summary: string;
   body_markdown?: string;
   difficulty: string;
-  category: { slug: string; name: string };
+  category: { id: number; slug: string; name: string; parent_id?: number | null };
+  order_index?: number;
   tags: { slug: string; name: string }[];
   updated_at: string;
+}
+
+export interface WikiCategory {
+  id: number;
+  slug: string;
+  name: string;
+  parent_id: number | null;
+  order_index: number;
+  article_count: number;
+  children: WikiCategory[];
 }
 
 export interface Project {

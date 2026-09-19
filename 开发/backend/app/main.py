@@ -4,6 +4,7 @@ from io import BytesIO
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,8 @@ app = FastAPI(
     description="VibeCodingWiki REST API and MCP service",
     lifespan=lifespan,
 )
+settings.data_dir.joinpath("media").mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(settings.data_dir / "media")), name="media")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,

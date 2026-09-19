@@ -59,10 +59,15 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(80))
+    real_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    mcp_token_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.user, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    github_username: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    gitee_username: Mapped[str | None] = mapped_column(String(120), nullable=True)
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(back_populates="user")
 
 
@@ -89,6 +94,8 @@ class Course(Base):
     status: Mapped[PublicationStatus] = mapped_column(
         Enum(PublicationStatus), default=PublicationStatus.draft
     )
+    is_standalone: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    directory_collapsible: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     lessons: Mapped[list[Lesson]] = relationship(
         back_populates="course", order_by="Lesson.order_index"
     )
@@ -127,7 +134,11 @@ class Category(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
-    articles: Mapped[list[WikiArticle]] = relationship(back_populates="category")
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), index=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    parent: Mapped[Category | None] = relationship(back_populates="children", remote_side="Category.id")
+    children: Mapped[list[Category]] = relationship(back_populates="parent", order_by="Category.order_index")
+    articles: Mapped[list[WikiArticle]] = relationship(back_populates="category", order_by="WikiArticle.order_index")
 
 
 class Tag(Base):
@@ -151,6 +162,7 @@ class WikiArticle(Base):
         Enum(Difficulty), default=Difficulty.beginner, index=True
     )
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), index=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0, index=True)
     status: Mapped[PublicationStatus] = mapped_column(
         Enum(PublicationStatus), default=PublicationStatus.draft, index=True
     )
@@ -206,6 +218,27 @@ class SkillPackage(Base):
         Enum(PublicationStatus), default=PublicationStatus.draft, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MCPSettings(Base):
+    __tablename__ = "mcp_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    auth_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    auth_token_hash: Mapped[str | None] = mapped_column(String(128))
+    github_client_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    github_client_secret: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    gitee_client_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    gitee_client_secret: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class MCPToolSetting(Base):
+    __tablename__ = "mcp_tool_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
 
 class ReviewEvent(Base):

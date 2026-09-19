@@ -27,11 +27,15 @@ const router = createRouter({
       meta: { auth: true },
     },
     { path: "/skills", component: () => import("@/views/SkillsView.vue") },
-    { path: "/auth", component: () => import("@/views/AuthView.vue") },
+    { path: "/profile", component: () => import("@/views/ProfileView.vue"), meta: { auth: true, account: true } },
+    { path: "/profile/:section(info|security|projects|notifications)", component: () => import("@/views/ProfileView.vue"), meta: { auth: true, account: true } },
+    { path: "/auth", redirect: to => ({ path: '/login', query: to.query }) },
+    { path: "/login", component: () => import("@/views/AuthView.vue"), meta: { standalone: true } },
+    { path: "/register", component: () => import("@/views/AuthView.vue"), meta: { standalone: true } },
     {
       path: "/admin",
       component: () => import("@/views/AdminView.vue"),
-      meta: { review: true },
+      meta: { auth: true, review: true },
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
@@ -41,7 +45,7 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore();
   await auth.initialize();
   if (to.meta.auth && !auth.signedIn)
-    return { path: "/auth", query: { returnTo: to.fullPath } };
+    return { path: "/login", query: { returnTo: to.fullPath } };
   if (to.meta.review && !auth.canReview) return "/";
 });
 

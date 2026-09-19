@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, apiError } from "@/services/api";
 import type { WikiArticle } from "@/types";
@@ -23,14 +23,17 @@ const loading = ref(false);
 const error = ref("");
 const pageSize = 10;
 const lifecycle = new AbortController();
+let searchVersion = 0;
 
 async function search() {
+  const version = ++searchVersion;
   loading.value = true;
   error.value = "";
   try {
     const response = await api.get<{ items: WikiArticle[]; total: number }>(
       "/wiki",
       {
+        signal: lifecycle.signal,
         params: {
           q: filters.q || undefined,
           phrase: filters.phrase || undefined,
@@ -51,15 +54,21 @@ async function search() {
         },
       },
     );
+    if (version !== searchVersion || lifecycle.signal.aborted) return;
+    await router.replace({ query: filters.q ? { q: filters.q } : {} });
+    if (version !== searchVersion || lifecycle.signal.aborted) return;
     articles.value = response.data.items;
     total.value = response.data.total;
-    await router.replace({ query: filters.q ? { q: filters.q } : {} });
   } catch (reason) {
-    error.value = apiError(reason);
+    if (version === searchVersion && !lifecycle.signal.aborted) error.value = apiError(reason);
   } finally {
-    loading.value = false;
+    if (version === searchVersion) loading.value = false;
   }
 }
+
+watch(() => route.query.q, (value) => {
+  if (String(value || '') !== filters.q) { filters.q = String(value || ''); filters.page = 1; void search(); }
+});
 
 function changePage(delta: number) {
   filters.page += delta;
@@ -67,10 +76,11 @@ function changePage(delta: number) {
 }
 
 onMounted(async () => {
-  categories.value = (
-    await api.get<{ slug: string; name: string }[]>("/wiki/categories")
-  ).data;
-  await search();
+  const initialSearch = search();
+  try { categories.value = (await api.get<{ slug: string; name: string }[]>("/wiki/categories")).data; }
+  catch { /* Search remains available when category options cannot load. */ }
+  await initialSearch;
+  if (lifecycle.signal.aborted) return;
   const context = document.modelContext;
   if (context?.registerTool) {
     await Promise.resolve(
@@ -116,8 +126,8 @@ onBeforeUnmount(() => lifecycle.abort());
 
 <template>
   <div class="page">
-    <div class="eyebrow">Advanced Query</div>
-    <h1>技术 Wiki</h1>
+    <div class="eyebrow">知识库</div>
+    <h1>查问题、找解释</h1>
     <p class="lede">搜索已发布词条，并按分类、标签、难度和更新时间缩小结果。</p>
     <form
       class="filter-bar"
@@ -162,7 +172,7 @@ onBeforeUnmount(() => lifecycle.abort());
     <p class="status-line" :class="{ error }">
       {{ loading ? "正在查询…" : error || `找到 ${total} 个词条` }}
     </p>
-    <div class="result-list">
+    <div v-if="!loading" class="result-list">
       <RouterLink
         v-for="article in articles"
         :key="article.id"

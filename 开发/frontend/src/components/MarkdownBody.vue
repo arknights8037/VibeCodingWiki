@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import DOMPurify from "dompurify";
-import { marked } from "marked";
+import { renderMarkdown } from "@/services/markdown";
 import { computed } from "vue";
 
 const props = defineProps<{ source: string }>();
 const html = computed(() =>
-  DOMPurify.sanitize(marked.parse(props.source) as string),
+  renderMarkdown(props.source),
 );
 </script>
 

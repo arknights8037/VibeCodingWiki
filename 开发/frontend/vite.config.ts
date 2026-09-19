@@ -1,17 +1,21 @@
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+import tailwindcss from "@tailwindcss/vite";
+
+const apiTarget = process.env.VCW_API_TARGET || "http://127.0.0.1:8000";
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8000",
-      "/skills": "http://localhost:8000",
-      "/healthz": "http://localhost:8000",
-      "/mcp": "http://localhost:8000",
+      "/api": apiTarget,
+      "^/skills/[^/]+/[^/]+/(SKILL\\.md|download\\.zip)$": apiTarget,
+      "/healthz": apiTarget,
+      "/mcp": apiTarget,
+      "/media": apiTarget,
     },
   },
 });

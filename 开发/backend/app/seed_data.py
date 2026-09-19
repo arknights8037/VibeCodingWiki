@@ -1,3 +1,24 @@
+# Retired seed content is archived on existing installations.
+RETIRED_COURSE_SLUGS = ("docker-operations", "fastapi-sqlite", "mcp-agent-skills", "vue-typescript")
+RETIRED_WIKI_SLUGS = (
+    "conventional-commits",
+    "vue-3",
+    "typescript",
+    "pinia",
+    "fastapi",
+    "rest-api",
+    "pydantic",
+    "sqlalchemy",
+    "sqlite",
+    "fts5",
+    "docker",
+    "docker-compose",
+    "csrf",
+    "mcp",
+    "agent-skills",
+)
+
+
 COURSES = [
     {
         "slug": "vibe-coding-basics",
@@ -68,40 +89,6 @@ Git 提交要对应一个可解释的变化。先从 `develop` 创建 `feat/wiki
         "criteria": "仓库不含密钥；提交粒度清晰；另一台机器能根据 README 启动；成员提交身份正确。",
     },
     {
-        "slug": "vue-typescript",
-        "title": "Vue 3 与 TypeScript 前端",
-        "summary": "使用组件、路由、状态和类型构建可维护的前端页面。",
-        "objective": "能够完成一个带加载、空结果和错误状态的数据页面。",
-        "body": """# Vue 页面从数据流开始
-
-Vue 组件应围绕明确职责组织。路由页面负责读取 URL 参数和协调数据，通用组件负责展示可复用内容，服务层负责 HTTP 调用，Pinia 只保存跨页面共享的状态，例如当前用户。
-
-TypeScript 类型应描述 API 实际返回的数据。不要用 `any` 绕过不确定性；如果接口可能缺少字段，类型应明确可选，并在界面提供对应状态。请求过程至少包含加载、成功、空结果和失败四种情况。
-
-表单在发送前验证必填项和格式，服务端仍需再次验证。服务端错误应转换为用户可理解的信息，而不是直接显示堆栈或内部异常。Markdown 正文在渲染为 HTML 后必须清理危险标签和链接。
-
-响应式设计从真实内容出发。桌面端可以同时显示筛选栏和结果，移动端将筛选折叠到结果上方。键盘用户应能访问导航、表单和主要操作，焦点状态不能被移除。""",
-        "practice": "实现 Wiki 查询页，包含关键词、分类、难度、分页，以及加载、空结果和错误状态。",
-        "criteria": "无 any；请求状态完整；移动端无横向滚动；所有表单控件有可访问标签。",
-    },
-    {
-        "slug": "fastapi-sqlite",
-        "title": "FastAPI 与 SQLite 后端",
-        "summary": "用类型化接口、事务和迁移建立轻量后端。",
-        "objective": "能够设计一个经过验证、可迁移并正确处理异常的 REST 接口。",
-        "body": """# 从契约到持久化
-
-FastAPI 使用 Pydantic 模型验证请求和输出。路由只处理 HTTP 语义，数据库查询和包校验等逻辑放入服务层。每个写操作在一个明确事务中完成，失败时回滚，不把半成品留在数据库。
-
-SQLite 适合课程项目和单机部署。连接启用外键、WAL 和 busy timeout，以减少常见锁等待问题。它仍然不适合大量并发写入，因此首版保持单后端进程。查询参数始终绑定，不拼接用户输入到 SQL。
-
-Alembic 记录结构变化。开发者修改模型后生成迁移，检查 SQL，再在空数据库和已有数据库上测试升级。种子脚本与迁移分离，重复运行不应创建重复数据。
-
-接口错误需要稳定结构和准确状态码。找不到资源返回 404，状态冲突返回 409，校验失败返回 422，未登录和权限不足分别返回 401 与 403。""",
-        "practice": "实现项目投稿的创建和提交审核接口，加入状态检查、数据库事务和 API 测试。",
-        "criteria": "空数据库可迁移；重复种子安全；错误码稳定；未授权用户不能修改他人投稿。",
-    },
-    {
         "slug": "testing-security-review",
         "title": "测试 调试 安全和人工审查",
         "summary": "用测试证据和代码审查控制 AI 生成代码的风险。",
@@ -117,40 +104,6 @@ Alembic 记录结构变化。开发者修改模型后生成迁移，检查 SQL�
 人工审查重点看权限检查、数据删除、外部输入、依赖和异常处理。通过测试不等于设计正确；审查者还要确认实现与需求一致，并检查是否出现无关改动。""",
         "practice": "为 Skills ZIP 上传编写一个正常测试和三个恶意输入测试，再进行一次人工差异审查。",
         "criteria": "测试能在 CI 重复运行；修复前至少一个测试失败；审查记录指出权限和输入边界。",
-    },
-    {
-        "slug": "docker-operations",
-        "title": "Docker 部署与运行维护",
-        "summary": "把前端、后端和数据卷组成可重复启动的单机服务。",
-        "objective": "能够构建镜像、启动服务、检查健康状态并验证数据持久化。",
-        "body": """# 单机 Compose 部署
-
-多阶段前端镜像先用 Node 构建静态文件，再由 Nginx 提供页面并代理 API。后端镜像安装锁定依赖，启动前执行数据库迁移和幂等种子。Compose 使用命名卷保存 SQLite 和上传内容。
-
-容器配置通过环境变量注入。仓库只提交 `.env.example`，生产环境必须更换访问密钥和管理员密码。健康检查应验证进程能处理请求，而不是只确认端口打开。
-
-部署验收包括四步：全新构建能够启动；浏览器刷新深层路由不会 404；容器重启后数据仍在；日志中没有反复异常。备份时复制数据库前应停止写入或使用 SQLite 在线备份机制。
-
-SQLite 部署保持单个后端 worker。若未来需要多个实例或高并发写入，应迁移到 PostgreSQL，而不是通过共享网络文件系统强行扩展 SQLite。""",
-        "practice": "用 Compose 启动项目，创建一条投稿，重启容器并确认记录仍然存在。",
-        "criteria": "首页和健康检查可访问；深层路由刷新正常；卷持久化通过；默认密钥已更换。",
-    },
-    {
-        "slug": "mcp-agent-skills",
-        "title": "MCP 与 Agent Skills 开放生态",
-        "summary": "通过标准协议公开只读知识，并分发可审查的技能包。",
-        "objective": "能够说明 MCP 工具、资源与 Agent Skill 包的职责差异。",
-        "body": """# 协议服务与技能包
-
-MCP 让模型客户端以统一方式发现和调用工具、读取资源。VibeCodingWiki 的 MCP 服务只暴露已发布内容，包括 Wiki 查询、课程读取、项目目录和 Skills 目录。写操作仍走需要登录和 CSRF 的 REST API，避免代理在缺少明确授权时修改平台数据。
-
-当前 MCP `2026-07-28` 规范使用无状态请求。服务通过官方 Python SDK 挂载到 FastAPI，顶层应用负责启动 SDK 的生命周期。工具参数使用明确类型，结果保持短小并返回可验证字段。
-
-Agent Skill 是一个至少包含 `SKILL.md` 的目录。文件头部记录名称和描述，正文提供模型执行任务所需的说明，还可以附带脚本、参考资料和资源。标准规定包内结构，但没有统一远程安装地址，因此平台提供稳定下载 URL、原始文件和 SHA-256。
-
-用户上传的技能包被视为不可信内容。服务检查路径、大小和元数据，只保存文件，从不在服务器上执行其中脚本。安装前，使用者仍需阅读说明和代码。""",
-        "practice": "设计一个只读 Wiki 查询工具和一个最小 SKILL.md，列出参数、返回值和安全边界。",
-        "criteria": "MCP 只返回已发布数据；Skill 通过格式校验；安装包哈希与下载内容一致。",
     },
 ]
 
@@ -200,140 +153,5 @@ WIKI = [
         "Git 使用提交保存可追踪变更。课程项目应让每名成员使用自己的账号提交对应成果，并通过分支和合并请求完成协作。",
         "beginner",
         ["git", "collaboration"],
-    ),
-    (
-        "conventional-commits",
-        "Conventional Commits",
-        "工程工具",
-        "用类型前缀表达提交目的的消息约定。",
-        "常见类型包括 feat、fix、docs、test 和 chore。提交信息描述行为变化，便于生成日志和追踪成员工作。",
-        "beginner",
-        ["git", "convention"],
-    ),
-    (
-        "vue-3",
-        "Vue 3",
-        "前端",
-        "用于构建响应式用户界面的渐进式 JavaScript 框架。",
-        "Vue 3 通过组合式 API 组织状态和逻辑。页面负责路由级协调，组件负责可复用展示，服务层负责 API 调用。",
-        "beginner",
-        ["vue", "frontend"],
-    ),
-    (
-        "typescript",
-        "TypeScript",
-        "前端",
-        "为 JavaScript 增加静态类型检查的语言。",
-        "TypeScript 能在构建前发现字段和接口不匹配。项目应根据 API 契约定义类型，避免使用 any 隐藏不确定性。",
-        "beginner",
-        ["typescript", "frontend"],
-    ),
-    (
-        "pinia",
-        "Pinia",
-        "前端",
-        "Vue 的状态管理库。",
-        "Pinia 适合保存跨路由共享的当前用户和界面状态。只在单个页面使用的数据应留在页面组件中。",
-        "beginner",
-        ["vue", "state"],
-    ),
-    (
-        "fastapi",
-        "FastAPI",
-        "后端",
-        "基于 Python 类型注解构建 API 的 Web 框架。",
-        "FastAPI 使用 Pydantic 校验输入输出并自动生成 OpenAPI。路由负责 HTTP 语义，复杂业务规则应放入服务层。",
-        "beginner",
-        ["python", "backend"],
-    ),
-    (
-        "rest-api",
-        "REST API",
-        "后端",
-        "围绕资源和 HTTP 方法组织的接口风格。",
-        "GET 读取资源，POST 创建或触发动作，PUT/PATCH 修改，DELETE 删除。状态码和错误结构应保持稳定。",
-        "beginner",
-        ["api", "http"],
-    ),
-    (
-        "pydantic",
-        "Pydantic",
-        "后端",
-        "依据类型注解验证和序列化 Python 数据。",
-        "Pydantic 模型构成 FastAPI 的输入输出契约。边界长度、枚举和 URL 格式应在模型中明确。",
-        "intermediate",
-        ["python", "validation"],
-    ),
-    (
-        "sqlalchemy",
-        "SQLAlchemy",
-        "数据",
-        "Python 的 SQL 工具包和对象关系映射库。",
-        "SQLAlchemy 负责模型关系、查询和事务。异步应用使用 AsyncSession，并避免在序列化期间触发未等待的懒加载。",
-        "intermediate",
-        ["python", "database"],
-    ),
-    (
-        "sqlite",
-        "SQLite",
-        "数据",
-        "把关系数据库保存在单个文件中的嵌入式数据库。",
-        "SQLite 适合单机和轻量应用。启用外键、WAL 与 busy timeout，并使用迁移管理结构变化。",
-        "beginner",
-        ["database", "storage"],
-    ),
-    (
-        "fts5",
-        "SQLite FTS5",
-        "数据",
-        "SQLite 的全文检索扩展。",
-        "FTS5 为标题、摘要和正文建立倒排索引。用户查询必须经过语法限制和参数绑定，中文短查询可配合 LIKE 回退。",
-        "advanced",
-        ["database", "search"],
-    ),
-    (
-        "docker",
-        "Docker",
-        "部署",
-        "通过镜像和容器封装应用及其运行环境。",
-        "Dockerfile 描述单个服务镜像，Compose 组合前端、后端和持久化卷。生产配置通过环境变量注入。",
-        "beginner",
-        ["docker", "deployment"],
-    ),
-    (
-        "docker-compose",
-        "Docker Compose",
-        "部署",
-        "使用声明式文件运行多个关联容器。",
-        "Compose 可以构建服务、配置健康检查、网络和数据卷。部署验收需要检查重启后的数据持久化。",
-        "beginner",
-        ["docker", "operations"],
-    ),
-    (
-        "csrf",
-        "CSRF",
-        "安全",
-        "利用浏览器自动携带凭据发起非预期写操作的攻击。",
-        "使用 Cookie 登录时，写请求应同时验证不可自动附带的 CSRF 请求头，并设置合适的 SameSite 与 Secure 属性。",
-        "intermediate",
-        ["security", "web"],
-    ),
-    (
-        "mcp",
-        "Model Context Protocol",
-        "开放标准",
-        "让模型客户端发现并调用工具、资源和提示的开放协议。",
-        "VibeCodingWiki 使用 MCP 2026-07-28 的 Streamable HTTP 服务，只暴露已发布的只读知识。",
-        "intermediate",
-        ["mcp", "protocol"],
-    ),
-    (
-        "agent-skills",
-        "Agent Skills",
-        "开放标准",
-        "用 SKILL.md、脚本和参考资料封装代理工作方法的开放格式。",
-        "一个 Skill 目录至少包含带 YAML frontmatter 的 SKILL.md。安装前应检查说明、脚本、依赖和许可证。",
-        "intermediate",
-        ["skills", "agents"],
     ),
 ]

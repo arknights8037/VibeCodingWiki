@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api, apiError } from "@/services/api";
 import type { Skill } from "@/types";
 
 const skills = ref<Skill[]>([]);
 const error = ref("");
+const query = ref(""); const copied = ref("");
+const filteredSkills = computed(() => skills.value.filter(s => `${s.name} ${s.summary} ${s.compatibility || ""}`.toLowerCase().includes(query.value.toLowerCase())));
+async function share(skill: Skill) { const url = `${location.origin}/skills#skill-${skill.slug}-${skill.version}`; try { await navigator.clipboard.writeText(url); copied.value = skill.slug; setTimeout(() => copied.value = "", 1800); } catch {} }
 onMounted(async () => {
   try {
     skills.value = (await api.get<Skill[]>("/skills")).data;
@@ -22,11 +25,13 @@ onMounted(async () => {
       每个下载包至少包含规范的 SKILL.md。平台提供原始文件、ZIP 和
       SHA-256，但不会执行包内脚本。
     </p>
+    <div class="content-toolbar"><el-input v-model="query" clearable placeholder="搜索 Skill…" /><span class="result-meta">{{ filteredSkills.length }} 个结果</span></div>
     <p v-if="error" class="error">{{ error }}</p>
-    <div class="skill-list" style="margin-top: 34px">
+    <div class="skill-list content-list">
       <article
-        v-for="skill in skills"
+        v-for="skill in filteredSkills"
         :key="`${skill.slug}-${skill.version}`"
+        :id="`skill-${skill.slug}-${skill.version}`"
         class="skill-card"
       >
         <div class="tag-row">
@@ -46,7 +51,7 @@ onMounted(async () => {
             :href="`/skills/${skill.slug}/${skill.version}/SKILL.md`"
             target="_blank"
             >查看原始文件</a
-          >
+          ><el-button text @click="share(skill)">{{ copied === skill.slug ? '已复制链接' : '分享' }}</el-button>
         </div>
       </article>
     </div>

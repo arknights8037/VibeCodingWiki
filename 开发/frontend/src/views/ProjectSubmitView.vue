@@ -9,6 +9,9 @@ const route = useRoute();
 const editingId = Number(route.query.edit || 0);
 const error = ref("");
 const saving = ref(false);
+const saveOnly = ref(false);
+const loaded = ref(!editingId);
+const savedId = ref(editingId);
 const form = reactive({
   name: "",
   slug: "",
@@ -37,12 +40,14 @@ onMounted(async () => {
       license_name: item.license_name,
       tech_stack: item.tech_stack.join(", "),
     });
+    loaded.value = true;
   } catch (reason) {
     error.value = apiError(reason) || "投稿不可编辑";
   }
 });
 
 async function submit() {
+  if (saving.value || !loaded.value) return;
   saving.value = true;
   error.value = "";
   try {
@@ -54,10 +59,11 @@ async function submit() {
         .map((item) => item.trim())
         .filter(Boolean),
     };
-    const project = editingId
-      ? (await api.put(`/projects/${editingId}`, payload)).data
+    const project = savedId.value
+      ? (await api.put(`/projects/${savedId.value}`, payload)).data
       : (await api.post("/projects", payload)).data;
-    await api.post(`/projects/${project.id}/submit`);
+    savedId.value = project.id;
+    if (!saveOnly.value) await api.post(`/projects/${project.id}/submit`);
     await router.push("/projects/mine");
   } catch (reason) {
     error.value = apiError(reason);
@@ -75,6 +81,8 @@ async function submit() {
       提交后进入人工审核。仓库必须公开，并清楚说明许可证、用途和运行方法。
     </p>
     <form class="form-grid form-panel" @submit.prevent="submit">
+      <p v-if="!loaded && !error" role="status">正在加载投稿内容…</p>
+      <fieldset :disabled="!loaded || saving" class="submission-fields">
       <label
         >项目名称<input v-model="form.name" required maxlength="160"
       /></label>
@@ -103,10 +111,15 @@ async function submit() {
         ><label>技术栈 逗号分隔<input v-model="form.tech_stack" /></label>
       </div>
       <div class="form-actions">
-        <button type="submit" :disabled="saving">
+        <button type="submit" :disabled="saving || !loaded" @click="saveOnly = true">保存草稿</button>
+        <button type="submit" :disabled="saving || !loaded" @click="saveOnly = false">
           {{ saving ? "提交中…" : "保存并提交审核" }}</button
         ><span class="error">{{ error }}</span>
       </div>
+      </fieldset>
     </form>
   </div>
 </template>
+<style scoped>
+.submission-fields { display: grid; gap: 18px; margin: 0; padding: 0; border: 0; min-width: 0; }
+</style>
