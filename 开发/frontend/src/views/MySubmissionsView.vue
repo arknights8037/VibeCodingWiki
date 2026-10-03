@@ -16,10 +16,6 @@ onMounted(async () => {
 
 <template>
   <div class="page">
-    <div class="section-heading">
-      <h1>我的投稿</h1>
-      <RouterLink to="/projects/submit">新建投稿</RouterLink>
-    </div>
     <p v-if="error" class="error">{{ error }}</p>
     <table class="data-table">
       <thead>

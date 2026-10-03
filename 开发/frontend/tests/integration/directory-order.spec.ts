@@ -12,7 +12,7 @@ test('root entries and category/entry up-down ordering persist and appear in the
   await page.getByLabel('条目英文标识', {exact:true}).fill('independent-entry');
   await page.getByRole('combobox', {name:'条目状态'}).press('Enter');
   await page.getByRole('option', {name:'发布',exact:true}).click();
-  await page.locator('.vditor-wysiwyg [contenteditable="true"]').fill('无分类正文');
+  await page.locator('.editor-shell__content[contenteditable="true"]').fill('无分类正文');
   await page.getByRole('button', {name:'保存课程',exact:true}).click();
   await expect(page.getByText('课程已保存',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'返回列表'}).click();

@@ -49,8 +49,8 @@ async function submit() {
           <fieldset :disabled="busy">
             <label v-if="mode === 'register'" for="auth-name">显示名称<input id="auth-name" v-model="form.display_name" required minlength="2" maxlength="80" autocomplete="nickname" placeholder="你希望大家怎么称呼你" /></label>
             <label for="auth-email">邮箱<input id="auth-email" v-model="form.email" type="email" required autocomplete="email" placeholder="you@example.com" /></label>
-            <label for="auth-password">密码<input id="auth-password" v-model="form.password" type="password" required minlength="10" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" placeholder="至少 10 个字符" /></label>
-            <label v-if="mode === 'register'" for="auth-confirm-password">确认密码<input id="auth-confirm-password" v-model="form.confirm_password" type="password" required minlength="10" autocomplete="new-password" placeholder="再次输入密码" /></label>
+            <label for="auth-password">密码<input id="auth-password" v-model="form.password" type="password" required minlength="8" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" placeholder="至少 8 个字符" /></label>
+            <label v-if="mode === 'register'" for="auth-confirm-password">确认密码<input id="auth-confirm-password" v-model="form.confirm_password" type="password" required minlength="8" autocomplete="new-password" placeholder="再次输入密码" /></label>
             <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
             <el-button type="primary" native-type="submit" :loading="busy" class="auth-submit">{{ mode === 'login' ? '登录' : '注册并登录' }}</el-button>
           </fieldset>

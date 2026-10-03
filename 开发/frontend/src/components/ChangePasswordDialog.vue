@@ -11,7 +11,7 @@ async function save() {
   if (busy.value) return;
   error.value = '';
   if (!form.current_password) { error.value = '请输入当前密码'; return; }
-  if (form.new_password.length < 10 || form.new_password.length > 128 || !/[a-zA-Z]/.test(form.new_password) || !/\d/.test(form.new_password)) { error.value = '新密码需为 10–128 个字符，包含字母和数字'; return; }
+  if (form.new_password.length < 8 || form.new_password.length > 128 || !/[a-zA-Z]/.test(form.new_password) || !/\d/.test(form.new_password)) { error.value = '新密码需为 8–128 个字符，包含字母和数字'; return; }
   if (form.new_password !== form.confirm_password) { error.value = '两次输入的新密码不一致'; return; }
   busy.value = true;
   try { await api.post('/auth/password', { current_password:form.current_password, new_password:form.new_password }); open.value = false; ElMessage.success('密码已修改'); }

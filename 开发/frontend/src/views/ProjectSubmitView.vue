@@ -12,6 +12,7 @@ const saving = ref(false);
 const saveOnly = ref(false);
 const loaded = ref(!editingId);
 const savedId = ref(editingId);
+const categories = ref<{ id:number; name:string }[]>([]);
 const form = reactive({
   name: "",
   slug: "",
@@ -21,6 +22,7 @@ const form = reactive({
   demo_url: "",
   license_name: "MIT",
   tech_stack: "",
+  content_category_id: 0,
 });
 
 onMounted(async () => {
@@ -39,12 +41,14 @@ onMounted(async () => {
       demo_url: item.demo_url || "",
       license_name: item.license_name,
       tech_stack: item.tech_stack.join(", "),
+      content_category_id: item.content_category_id || 0,
     });
     loaded.value = true;
   } catch (reason) {
     error.value = apiError(reason) || "投稿不可编辑";
   }
 });
+onMounted(async () => { try { categories.value = (await api.get<{id:number;name:string}[]>("/content-categories?kind=project")).data; } catch {} });
 
 async function submit() {
   if (saving.value || !loaded.value) return;
@@ -75,11 +79,6 @@ async function submit() {
 
 <template>
   <div class="page narrow">
-    <div class="eyebrow">Submission</div>
-    <h1>{{ editingId ? "修改并重新提交" : "提交开源项目" }}</h1>
-    <p class="lede">
-      提交后进入人工审核。仓库必须公开，并清楚说明许可证、用途和运行方法。
-    </p>
     <form class="form-grid form-panel" @submit.prevent="submit">
       <p v-if="!loaded && !error" role="status">正在加载投稿内容…</p>
       <fieldset :disabled="!loaded || saving" class="submission-fields">
@@ -106,6 +105,7 @@ async function submit() {
         >公开仓库地址<input v-model="form.repository_url" required type="url"
       /></label>
       <label>演示地址 可选<input v-model="form.demo_url" type="url" /></label>
+      <label>内容分区<select v-model.number="form.content_category_id" required><option :value="0" disabled>请选择分区</option><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
       <div class="split">
         <label>许可证<input v-model="form.license_name" required /></label
         ><label>技术栈 逗号分隔<input v-model="form.tech_stack" /></label>

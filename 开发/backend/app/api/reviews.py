@@ -4,6 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.projects import project_out
 from app.database import get_session
@@ -21,7 +22,7 @@ async def review_queue(
     session: AsyncSession = Depends(get_session),
 ) -> list[ProjectOut]:
     items = await session.scalars(
-        select(ProjectSubmission)
+        select(ProjectSubmission).options(selectinload(ProjectSubmission.content_category))
         .where(ProjectSubmission.status == PublicationStatus(status))
         .order_by(ProjectSubmission.submitted_at)
     )

@@ -1,0 +1,17 @@
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { api, apiError } from "@/services/api";
+type Kind = 'project' | 'skill'; type Category = { id:number; kind:Kind; slug:string; name:string; order_index:number };
+const categories=ref<Category[]>([]), activeKind=ref<Kind>('project'), dialogOpen=ref(false), editingId=ref<number|null>(null), error=ref(''), saving=ref(false);
+const form=reactive<{kind:Kind;name:string}>({kind:'project',name:''}); const visible=computed(()=>categories.value.filter(x=>x.kind===activeKind.value)); const canSave=computed(()=>form.name.trim().length>=2);
+function openCreate(){editingId.value=null;form.kind=activeKind.value;form.name='';error.value='';dialogOpen.value=true;} function edit(x:Category){editingId.value=x.id;form.kind=x.kind;form.name=x.name;error.value='';dialogOpen.value=true;}
+async function load(){try{categories.value=(await api.get<Category[]>('/content-categories')).data;}catch(e){ElMessage.error(apiError(e));}}
+async function save(){saving.value=true;error.value='';try{const payload={kind:form.kind,name:form.name.trim()};const wasEditing=!!editingId.value;if(editingId.value)await api.put(`/content-categories/${editingId.value}`,payload);else await api.post('/content-categories',payload);await load();activeKind.value=form.kind;dialogOpen.value=false;ElMessage.success(wasEditing?'分区已更新':'分区已创建');}catch(e){error.value=apiError(e);}finally{saving.value=false;}}
+async function remove(x:Category){try{await ElMessageBox.confirm(`确定删除“${x.name}”分区吗？`,'确认删除分区',{type:'warning',confirmButtonText:'删除',cancelButtonText:'取消'});await api.delete(`/content-categories/${x.id}`);await load();ElMessage.success('分区已删除');}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(apiError(e));}}
+onMounted(load);
+</script>
+<template><div class="content-category-manager"><el-tabs v-model="activeKind"><el-tab-pane label="作品分区" name="project"/><el-tab-pane label="工具分区" name="skill"/></el-tabs><div class="category-toolbar"><span>{{visible.length}} 个分区</span><el-button type="primary" @click="openCreate">新增分区</el-button></div><el-empty v-if="!visible.length" description="还没有分区" :image-size="70"/><div v-else class="category-rows"><div v-for="item in visible" :key="item.id" class="category-row"><strong>{{item.name}}</strong><div class="row-actions"><el-button @click="edit(item)">编辑</el-button><el-button type="danger" plain @click="remove(item)">删除</el-button></div></div></div><el-dialog v-model="dialogOpen" :title="editingId?'编辑分区':'新增分区'" width="min(420px, calc(100vw - 32px))"><el-form label-position="top" @submit.prevent="save"><el-form-item label="分区名称"><el-input v-model="form.name" autofocus placeholder="例如：前端项目" @keyup.enter="canSave && save()"/></el-form-item><p v-if="error" class="error">{{error}}</p></el-form><template #footer><el-button @click="dialogOpen=false">取消</el-button><el-button type="primary" :loading="saving" :disabled="!canSave" @click="save">{{editingId?'保存修改':'创建分区'}}</el-button></template></el-dialog></div></template>
+<style scoped>
+.category-toolbar{display:flex;align-items:center;justify-content:space-between;margin:12px 0 18px;color:#8b8f98;font-size:13px}.category-rows{border-top:1px solid #e5e7eb}.category-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:13px 0;border-bottom:1px solid #e5e7eb}.row-actions{display:flex;gap:8px}.row-actions .el-button{margin:0}
+</style>

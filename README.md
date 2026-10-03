@@ -4,10 +4,10 @@ VibeCodingWiki 是面向零基础学习者的中文 Vibe Coding 知识平台。�
 
 ## 首版能力
 
-- 5 个递进课程模块，每个模块含目标、前置知识、完整示例课文、实践任务和完成标准。
+- 5 个递进课程模块、15 篇完整课文；每篇都包含场景导入、核心概念、跟做任务和课后检查。
 - 5 个预置 Wiki 词条，支持中文全文检索、精确短语、分类、标签、难度、更新时间、分页与相关度排序。
 - `user` 投稿，`reviewer` / `admin` 审核、驳回、发布、取消发布和置顶；审核历史不可覆盖。
-- 6 个只读 MCP 工具与对应资源，仅暴露已发布内容。
+- 公开 MCP 提供 6 个只读工具与对应资源，仅暴露已发布内容；管理员可通过独立的凭证端点更新 Wiki 内容。
 - Agent Skills ZIP 校验、稳定下载地址、原始 `SKILL.md` 与 SHA-256。
 - Vue 3 管理后台，覆盖审核、用户角色、Wiki、Skills、MCP、OAuth 凭据与审计日志。
 - 统一文档站账户中心：个人资料、文件头像、账号安全、MCP 凭据、我的项目和通知。
@@ -48,15 +48,15 @@ python -m venv .venv
 .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-前端要求 Node.js 22 或更新版本。在另一个终端从项目根目录启动。已有 `node_modules` 时跳过安装；npm 可以执行脚本，不依赖本机 pnpm 启动器：
+前端要求 Node.js 22 或更新版本。在另一个终端从项目根目录启动。已有 `node_modules` 时可跳过安装；首次安装使用锁定依赖：
 
 ```powershell
 cd 开发/frontend
-npm install --package-lock=false
+npm ci
 npm run dev -- --port 5173 --strictPort
 ```
 
-访问网站 [http://localhost:5173](http://localhost:5173)，API 文档在 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)，MCP 在 `http://127.0.0.1:8000/mcp`。前端代理 API、MCP 和 Skill 文件下载，`/skills` 本身仍是网页路由，可直接打开与刷新。
+访问网站 [http://localhost:5173](http://localhost:5173)，API 文档在 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)，公开 MCP 在 `http://127.0.0.1:8000/mcp`，管理员写入 MCP 在 `http://127.0.0.1:8000/mcp/admin`。前端代理 API、MCP 和 Skill 文件下载，`/skills` 本身仍是网页路由，可直接打开与刷新。
 
 全新数据库的本地管理员为 `admin@example.com` / `ChangeMe123!`。如果已存在管理员，初始化不会覆盖其密码。数据保存在 `开发/backend/data/vibecodingwiki.db`，重启不会清空。头像文件位于 `VCW_DATA_DIR/media/avatars`。后端 `.env` 或 `VCW_` 环境变量可以覆盖配置，根目录 Docker `.env` 不会自动被本地后端读取。
 
@@ -77,6 +77,15 @@ npm run test:e2e
 npm run test:integration
 ```
 
+课程正文保存在 `开发/backend/app/course_content.py`，按五个公开模块、每模块三篇课文组织；每篇统一采用“场景导入—核心概念—跟做任务—课后检查”的叙事结构，并在正文末尾生成学习目标、实践任务和完成标准卡片。首次改版会自动用于全新数据库；已有开发库请先备份，再运行：
+
+```powershell
+cd 开发/backend
+.venv/Scripts/python.exe ../../tools/refresh_course_content.py --database data/vibecodingwiki.db
+```
+
+知识库编辑器使用 `开发/frontend/vendor/my-notebook-vue-block-editor-0.1.0.tgz` 的本机打包依赖，来源为本机 `vue-block-editor` 最新构建；安装锁文件、归档 SHA-256 和依赖路径均已固定。前端依赖安装后可运行 `npm run verify:editor-package` 检查归档未被替换。
+
 `test:e2e` 使用接口模拟检查界面；`test:integration` 自动启动真实后端（8001）与前端（5174），使用 `.local/integration-*` 独立数据库验证注册、投稿审核、后台管理和下载，不修改日常使用数据库。首次运行浏览器测试若缺少浏览器，执行 `npx playwright install chromium`。测试详情见 [本地验收记录](文档/LOCAL_VERIFICATION.md)。
 
 ## 目录
@@ -92,7 +101,9 @@ npm run test:integration
 
 ## MCP 与 Skills
 
-MCP 目标规范为 `2026-07-28`。工具：`search_wiki`、`get_wiki_article`、`list_courses`、`get_lesson`、`list_projects`、`list_skills`。服务不会返回草稿、投稿人资料或后台数据。
+MCP 目标规范为 `2026-07-28`。公开工具：`search_wiki`、`get_wiki_article`、`list_courses`、`get_lesson`、`list_projects`、`list_skills`。服务不会返回草稿、投稿人资料或后台数据。
+
+管理员可在后台的“MCP 管理”中生成全局令牌，或在管理员账户的安全设置中生成个人 MCP 凭据；将 `Authorization: Bearer <令牌>` 加到管理员端点的请求头，即可发现并调用 `update_wiki_article`、`update_lesson` 和 `update_course`。该端点始终要求管理员令牌，更新会记录为 `wiki.update.mcp` 审计事件；令牌只保存 SHA-256 摘要，不会在接口响应中回显。公开 MCP 的“开启令牌鉴权”开关只影响 `/mcp`，管理员写入端点不会因该开关关闭而失去保护。
 
 Skills 的稳定地址形式：
 

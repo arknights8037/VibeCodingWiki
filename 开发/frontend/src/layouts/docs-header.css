@@ -25,6 +25,9 @@
 .directory-empty { font-size: 12px; padding: 0 12px; color: var(--docs-muted); }
 .sidebar-settings { display: flex; justify-content: space-between; align-items: center; padding: 0 4px 8px; flex-shrink: 0; }
 .sidebar-settings .el-button, .sidebar-workspace .el-button { color: var(--docs-muted); margin: 0; padding: 8px 12px; justify-content: flex-start; }
+.sidebar-submit-links { display:grid; gap:6px; margin: 0 0 10px; }
+.sidebar-submit-links a { display:block; padding:8px 10px; border:1px solid #426b91; border-radius:6px; background:#426b91; color:#fff; font-size:12px; font-weight:600; }
+.sidebar-submit-links a:hover { border-color:#315675; background:#315675; color:#fff; }
 .sidebar-settings > span { color: #aaa69b; font-size: 10px; }
 .docs-main { padding-top: 64px; }
 .sidebar-workspace { flex-shrink: 0; padding: 0 4px; }

@@ -19,7 +19,7 @@ test('admin edits course directory and visual markdown, publishes and preserves 
   await page.getByRole('textbox', { name: '条目英文标识', exact: true }).fill('visual-editor-lesson');
   await page.getByRole('combobox', { name: '条目状态', exact: true }).press('Enter');
   await page.getByRole('option', { name: '发布', exact: true }).click();
-  const editor = page.locator('.vditor-wysiwyg [contenteditable="true"]');
+  const editor = page.locator('.editor-shell__content[contenteditable="true"]');
   await expect(editor).toBeVisible();
   await editor.fill('直接编辑正文并保存');
   await page.getByRole('button', { name: '保存课程', exact: true }).click();

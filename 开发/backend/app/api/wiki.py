@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,6 +12,26 @@ from app.schemas import CategoryOut, Page, WikiDetail, WikiSummary
 from app.services.search import search_wiki_articles
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
+
+
+class WikiTerm(BaseModel):
+    slug: str
+    title: str
+    summary: str
+
+
+@router.get("/terms", response_model=list[WikiTerm])
+async def list_terms(
+    response: Response, session: AsyncSession = Depends(get_session)
+) -> list[WikiTerm]:
+    """Live, lightweight index for automatic course annotations; no pagination."""
+    response.headers["Cache-Control"] = "no-store"
+    rows = await session.execute(
+        select(WikiArticle.slug, WikiArticle.title, WikiArticle.summary)
+        .where(WikiArticle.status == PublicationStatus.published)
+        .order_by(WikiArticle.id)
+    )
+    return [WikiTerm(slug=row.slug, title=row.title, summary=row.summary) for row in rows]
 
 
 @router.get("", response_model=Page)

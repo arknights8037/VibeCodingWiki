@@ -126,9 +126,6 @@ onBeforeUnmount(() => lifecycle.abort());
 
 <template>
   <div class="page">
-    <div class="eyebrow">知识库</div>
-    <h1>查问题、找解释</h1>
-    <p class="lede">搜索已发布词条，并按分类、标签、难度和更新时间缩小结果。</p>
     <form
       class="filter-bar"
       @submit.prevent="
@@ -136,12 +133,6 @@ onBeforeUnmount(() => lifecycle.abort());
         search();
       "
     >
-      <input v-model="filters.q" aria-label="关键词" placeholder="关键词" />
-      <input
-        v-model="filters.phrase"
-        aria-label="精确短语"
-        placeholder="精确短语"
-      />
       <select v-model="filters.category" aria-label="分类">
         <option value="">全部分类</option>
         <option v-for="item in categories" :key="item.slug" :value="item.slug">
@@ -160,11 +151,6 @@ onBeforeUnmount(() => lifecycle.abort());
         <option value="title_asc">标题</option>
       </select>
       <button type="submit">查询</button>
-      <input
-        v-model="filters.tags"
-        aria-label="标签"
-        placeholder="标签，以逗号分隔"
-      />
       <label class="compact-label"
         >更新晚于<input v-model="filters.updated_after" type="date"
       /></label>

@@ -110,6 +110,7 @@ class Lesson(Base):
     title: Mapped[str] = mapped_column(String(180))
     objective: Mapped[str] = mapped_column(Text)
     body_markdown: Mapped[str] = mapped_column(Text)
+    content_json: Mapped[str] = mapped_column(Text, default='')
     practice: Mapped[str] = mapped_column(Text)
     completion_criteria: Mapped[str] = mapped_column(Text)
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=30)
@@ -141,6 +142,16 @@ class Category(Base):
     articles: Mapped[list[WikiArticle]] = relationship(back_populates="category", order_by="WikiArticle.order_index")
 
 
+class ContentCategory(Base):
+    __tablename__ = "content_categories"
+    __table_args__ = (UniqueConstraint("kind", "slug"), UniqueConstraint("kind", "name"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    slug: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(80))
+    order_index: Mapped[int] = mapped_column(Integer, default=0, index=True)
+
+
 class Tag(Base):
     __tablename__ = "tags"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -158,6 +169,7 @@ class WikiArticle(Base):
     title: Mapped[str] = mapped_column(String(180), index=True)
     summary: Mapped[str] = mapped_column(Text)
     body_markdown: Mapped[str] = mapped_column(Text)
+    content_json: Mapped[str] = mapped_column(Text, default='')
     difficulty: Mapped[Difficulty] = mapped_column(
         Enum(Difficulty), default=Difficulty.beginner, index=True
     )
@@ -179,6 +191,8 @@ class ProjectSubmission(Base):
     __tablename__ = "project_submissions"
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), index=True, nullable=True)
+    content_category_id: Mapped[int | None] = mapped_column(ForeignKey("content_categories.id", ondelete="SET NULL"), index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(160))
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     summary: Mapped[str] = mapped_column(Text)
@@ -199,10 +213,16 @@ class ProjectSubmission(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
     owner: Mapped[User] = relationship()
+    category: Mapped[Category | None] = relationship()
+    content_category: Mapped[ContentCategory | None] = relationship()
 
 
 class SkillPackage(Base):
     __tablename__ = "skill_packages"
+    review_note: Mapped[str | None] = mapped_column(Text)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), index=True, nullable=True)
+    content_category_id: Mapped[int | None] = mapped_column(ForeignKey("content_categories.id", ondelete="SET NULL"), index=True, nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
     __table_args__ = (UniqueConstraint("slug", "version"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(100), index=True)
@@ -218,6 +238,8 @@ class SkillPackage(Base):
         Enum(PublicationStatus), default=PublicationStatus.draft, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    category: Mapped[Category | None] = relationship()
+    content_category: Mapped[ContentCategory | None] = relationship()
 
 
 class MCPSettings(Base):

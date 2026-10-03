@@ -3,7 +3,6 @@ import { test, expect } from '@playwright/test';
 test('admin removes categories, entries and other resources with cancel and confirmation', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.route('**/vendor/vditor/dist/js/lute/lute.min.js', async route => { await new Promise(resolve => setTimeout(resolve, 1500)); await route.continue(); });
   await page.goto('/login?returnTo=/admin?section=courses');
   await page.getByLabel('邮箱', { exact: true }).fill('admin@example.com');
   await page.getByLabel('密码', { exact: true }).fill('AdminPassword123!');
@@ -45,7 +44,6 @@ test('admin removes categories, entries and other resources with cancel and conf
 
   await page.getByRole('button', { name: 'Wiki 编辑', exact: true }).click();
   const wiki = (await (await page.request.get('/api/v1/admin/wiki')).json())[0];
-  await page.getByLabel('搜索当前列表').fill(wiki.title);
   row = page.getByRole('row').filter({ hasText: wiki.title });
   await row.getByRole('button', { name: '移除', exact: true }).click();
   await page.getByRole('button', { name: '确认移除', exact: true }).click();
@@ -53,14 +51,15 @@ test('admin removes categories, entries and other resources with cancel and conf
   expect((await page.request.get(`/api/v1/wiki/${wiki.slug}`)).status()).toBe(404);
 
   await page.getByRole('button', { name: 'Skills', exact: true }).click();
-  row = page.locator('.data-table tbody tr').filter({ hasText: 'safe-wiki-research' }).first();
-  await row.getByRole('button', { name: '移除', exact: true }).click();
+  row = page.getByRole('row').filter({ hasText: 'safe-wiki-research' }).first();
+  await expect(row).toBeVisible();
+  await row.locator('button').last().click();
   await page.getByRole('button', { name: '确认移除', exact: true }).click();
   await expect(row).toHaveCount(0);
 
   await page.getByRole('button', { name: '审核', exact: true }).click();
   await page.getByLabel('投稿状态').selectOption('published');
-  row = page.locator('.data-table tbody tr').filter({ hasText: 'VibeCodingWiki' });
+  row = page.getByRole('row').filter({ hasText: 'VibeCodingWiki' });
   await row.getByRole('button', { name: '移除', exact: true }).click();
   await page.getByRole('button', { name: '确认移除', exact: true }).click();
   await expect(row).toHaveCount(0);
@@ -75,6 +74,6 @@ test('admin removes categories, entries and other resources with cancel and conf
   await expect(row).toHaveCount(0);
   await expect(page.getByRole('row').filter({ hasText: 'admin@example.com' }).getByRole('button', { name: '移除', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '审计', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'users.delete', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell').filter({ hasText: 'users.delete' }).first()).toBeVisible();
   expect(errors).toEqual([]);
 });

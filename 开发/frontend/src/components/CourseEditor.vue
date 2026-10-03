@@ -306,7 +306,7 @@ async function save(publish = false) {
       </div>
 
       <ContentEditorLayout v-if="lesson && active >= 0">
-        <MarkdownEditor :key="`${draft!.id}-${active}`" v-model="lesson!.body_markdown" :disabled="saving" height="calc(100dvh - 112px)" />
+        <MarkdownEditor :key="`${draft!.id}-${active}`" v-model="lesson!.body_markdown" v-model:content-json="lesson!.content_json" :disabled="saving" height="calc(100dvh - 112px)" />
         <template #actions>
             <el-button :icon="Back" :disabled="saving" @click="backToList">返回列表</el-button>
             <el-button :icon="DocumentChecked" type="primary" :loading="saving" @click="save()">保存课程</el-button>
@@ -346,8 +346,8 @@ async function save(publish = false) {
 
 
 .content-writing-area { min-width:0; }
-.content-writing-area :deep(.course-markdown-editor) { min-height:520px; border-radius:6px; overflow:hidden; }
-.content-writing-area :deep(.vditor-reset) { padding:24px 28px !important; line-height:1.9; }
+.content-writing-area :deep(.course-block-editor) { min-height:520px; border-radius:6px; overflow:hidden; }
+.content-writing-area :deep(.editor-shell__content) { padding:24px 28px !important; line-height:1.9; }
 .content-properties { min-width:0; border:1px solid #e5e5e2; border-radius:6px; background:#fafaf8; position:sticky; top:82px; }
 .properties-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px; border-bottom:1px solid #e5e5e2; }
 .properties-actions .el-button { margin:0; padding:8px; }
@@ -364,8 +364,8 @@ async function save(publish = false) {
   
   .content-properties { position:static; }
   .properties-scroll :deep(.el-scrollbar__wrap) { max-height:none !important; }
-  .content-writing-area :deep(.course-markdown-editor) { height:60dvh !important; min-height:380px; }
-  .content-writing-area :deep(.vditor-reset) { padding:18px !important; }
+  .content-writing-area :deep(.course-block-editor) { height:60dvh !important; min-height:380px; }
+  .content-writing-area :deep(.editor-shell__content) { padding:18px !important; }
 }
 
 .directory-row-actions { display:grid; grid-template-columns:100px 100px 70px 70px 70px; gap:6px; align-items:center; }

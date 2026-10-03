@@ -13,7 +13,7 @@ class Message(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     display_name: str = Field(min_length=2, max_length=80)
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
     @field_validator("password")
     @classmethod
@@ -32,7 +32,7 @@ class LoginRequest(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
     @field_validator("new_password")
     @classmethod
@@ -92,6 +92,7 @@ class WikiSummary(BaseModel):
 
 class WikiDetail(WikiSummary):
     body_markdown: str
+    content_json: str = ''
     version: int
     status: PublicationStatus
 
@@ -105,6 +106,22 @@ class CategoryOut(BaseModel):
     order_index: int = 0
 
 
+class ContentCategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    kind: Literal["project", "skill"]
+    slug: str
+    name: str
+    order_index: int = 0
+
+
+class ContentCategoryWrite(BaseModel):
+    kind: Literal["project", "skill"]
+    name: str = Field(min_length=2, max_length=80)
+    slug: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
+    order_index: int = Field(default=0, ge=0)
+
+
 class LessonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -112,6 +129,7 @@ class LessonOut(BaseModel):
     title: str
     objective: str
     body_markdown: str
+    content_json: str = ''
     practice: str
     completion_criteria: str
     estimated_minutes: int
@@ -141,6 +159,7 @@ class ProjectCreate(BaseModel):
     demo_url: HttpUrl | None = None
     license_name: str = Field(default="MIT", max_length=80)
     tech_stack: list[str] = Field(default_factory=list, max_length=20)
+    content_category_id: int | None = Field(default=None, gt=0)
 
 
 class ProjectOut(BaseModel):
@@ -158,6 +177,8 @@ class ProjectOut(BaseModel):
     review_note: str | None
     submitted_at: datetime | None
     published_at: datetime | None
+    content_category_id: int | None = None
+    content_category: ContentCategoryOut | None = None
 
 
 class ReviewRequest(BaseModel):
@@ -171,6 +192,7 @@ class WikiWrite(BaseModel):
     title: str = Field(min_length=2, max_length=180)
     summary: str = Field(min_length=10, max_length=500)
     body_markdown: str = Field(min_length=20, max_length=50000)
+    content_json: str | None = Field(default=None, max_length=1000000)
     difficulty: Difficulty = Difficulty.beginner
     category: str = Field(min_length=2, max_length=80)
     category_id: int | None = None
@@ -240,6 +262,8 @@ class SkillOut(BaseModel):
     license_name: str | None
     compatibility: str | None
     sha256: str
+    content_category_id: int | None = None
+    content_category: ContentCategoryOut | None = None
 
 
 class Page(BaseModel):
@@ -250,12 +274,45 @@ class Page(BaseModel):
 
 
 class AdminSkillOut(SkillOut):
+    review_note: str | None = None
     id: int
     status: PublicationStatus
 
 
 class SkillIntroUpdate(BaseModel):
     summary: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("summary")
+    @classmethod
+    def nonblank_summary(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("请填写简要说明")
+        return value.strip()
+
+
+class SkillCreate(SkillIntroUpdate):
+    name: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)
+    description: str = Field(min_length=1, max_length=1024)
+    instructions: str = Field(min_length=1, max_length=100000)
+    version: str = Field(default="1.0.0", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,39}$")
+    publish: bool = False
+    content_category_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("description", "instructions")
+    @classmethod
+    def nonblank_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("内容不能为空")
+        return value.strip()
+
+
+class SkillStatusUpdate(BaseModel):
+    status: Literal["draft", "pending_review", "published"]
+
+
+class SkillReviewUpdate(BaseModel):
+    status: Literal["draft", "published", "rejected"]
+    review_note: str = Field(default="", max_length=2000)
 
 
 class MCPSettingsOut(BaseModel):
@@ -302,6 +359,7 @@ class LessonWrite(BaseModel):
     title: str = Field(min_length=1, max_length=180)
     objective: str = Field(default="", max_length=10000)
     body_markdown: str = Field(default="", max_length=200000)
+    content_json: str | None = Field(default=None, max_length=1000000)
     practice: str = Field(default="", max_length=20000)
     completion_criteria: str = Field(default="", max_length=20000)
     estimated_minutes: int = Field(default=30, ge=0, le=10000)

@@ -49,7 +49,7 @@ Nginx :80 ── static Vue SPA
 
 ### MCP 生命周期
 
-MCP ASGI 应用挂载在 FastAPI 最后一个路由；顶层 lifespan 显式进入 `mcp.session_manager.run()`，避免挂载子应用的 lifespan 不执行。MCP 函数重新进行发布态过滤，不经过后台端点。
+公开 MCP ASGI 应用挂载在 FastAPI 最后一个路由；管理员写入端点 `/mcp/admin` 在其前面挂载并始终校验 Bearer 凭证。顶层 lifespan 显式进入两个 MCP session manager，避免挂载子应用的 lifespan 不执行。公开 MCP 函数重新进行发布态过滤，管理员写入函数记录独立审计事件。
 
 ### 账户中心与 OAuth
 

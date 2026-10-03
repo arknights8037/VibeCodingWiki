@@ -12,7 +12,8 @@ const markdown = new Marked({ renderer: {
   },
 } });
 export function renderMarkdown(source: string): string {
-  return DOMPurify.sanitize(markdown.parse(source) as string);
+  const normalized = source.replace(/\*\*\s+([^*]+?)\s+\*\*/g, '**$1**');
+  return DOMPurify.sanitize(markdown.parse(normalized) as string);
 }
 export function renderEditorCards(element: HTMLElement) {
   element.querySelectorAll('pre > code.language-card').forEach(code => {

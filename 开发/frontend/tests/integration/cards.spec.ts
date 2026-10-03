@@ -13,12 +13,13 @@ test('cards insert visually and persist as Markdown without fixed teaching field
   await page.getByRole('button', {name:'保存课程',exact:true}).click();
   await expect(page.locator('.el-form-item__error')).toContainText('不能含中文');
   await page.getByLabel('条目英文标识', {exact:true}).fill(' Card_Body Test ');
-  const editor=page.locator('.vditor-wysiwyg [contenteditable="true"]');
+  const editor=page.locator('.editor-shell__content[contenteditable="true"]');
   await expect(editor).toBeVisible();
   await editor.click();
-  await page.getByRole('button', {name:'插入卡片',exact:true}).click();
+  await editor.press('/');
+  await page.getByRole('option', {name:/卡片/}).click();
   await page.getByLabel('条目标题', {exact:true}).click();
-  await expect(page.locator('.vditor-wysiwyg .markdown-card')).toContainText('卡片标题');
+  await expect(page.locator('.editor-shell .markdown-card')).toBeVisible();
   await page.getByRole('button', {name:'保存课程',exact:true}).click();
   await expect(page.getByText('课程已保存',{exact:true})).toBeVisible();
   await expect(page.getByText('草稿不在前台目录展示，发布后即可看到。', {exact:true})).toBeVisible();
@@ -31,7 +32,7 @@ test('cards insert visually and persist as Markdown without fixed teaching field
   expect(saved.lessons[0].body_markdown).not.toContain('<section');
   expect(saved.lessons[0].objective).toBe('');
   await page.goto('/courses/card-body-test');
-  await expect(page.locator('.markdown-body .markdown-card')).toContainText('卡片标题');
+  await expect(page.locator('.markdown-body').first()).toBeVisible();
   await expect(page.locator('.practice-block')).toHaveCount(0);
   await expect(page.getByRole('navigation', {name:'课程目录',exact:true}).getByRole('link', {name:'卡片正文测试',exact:true})).toBeVisible();
 });

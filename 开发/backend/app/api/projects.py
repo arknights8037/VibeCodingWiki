@@ -2,12 +2,13 @@ import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_session
 from app.dependencies import require_user, verify_csrf
-from app.models import ProjectSubmission, PublicationStatus, User
+from app.models import ContentCategory, ProjectSubmission, PublicationStatus, User
 from app.schemas import Message, ProjectCreate, ProjectOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -29,20 +30,26 @@ def project_out(project: ProjectSubmission) -> ProjectOut:
         review_note=project.review_note,
         submitted_at=project.submitted_at,
         published_at=project.published_at,
+        content_category_id=project.content_category_id,
+        content_category=project.content_category,
     )
 
 
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(
     featured: bool | None = None,
+    q: str = Query(default="", max_length=300),
     limit: int = Query(default=30, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
 ) -> list[ProjectOut]:
-    statement = select(ProjectSubmission).where(
+    statement = select(ProjectSubmission).options(selectinload(ProjectSubmission.content_category)).where(
         ProjectSubmission.status == PublicationStatus.published
     )
     if featured is not None:
         statement = statement.where(ProjectSubmission.is_featured == featured)
+    if q.strip():
+        pattern = f"%{q.strip()}%"
+        statement = statement.where(or_(ProjectSubmission.name.ilike(pattern), ProjectSubmission.summary.ilike(pattern), ProjectSubmission.tech_stack.ilike(pattern)))
     projects = await session.scalars(
         statement.order_by(
             ProjectSubmission.is_featured.desc(), ProjectSubmission.published_at.desc()
@@ -57,7 +64,7 @@ async def my_projects(
     session: AsyncSession = Depends(get_session),
 ) -> list[ProjectOut]:
     projects = await session.scalars(
-        select(ProjectSubmission)
+        select(ProjectSubmission).options(selectinload(ProjectSubmission.content_category))
         .where(ProjectSubmission.owner_id == user.id)
         .order_by(ProjectSubmission.updated_at.desc())
     )
@@ -79,8 +86,21 @@ async def create_project(
         select(ProjectSubmission).where(ProjectSubmission.slug == payload.slug)
     ):
         raise HTTPException(status_code=409, detail="项目标识已存在")
+    category = (
+        await session.get(ContentCategory, payload.content_category_id)
+        if payload.content_category_id
+        else await session.scalar(
+            select(ContentCategory)
+            .where(ContentCategory.kind == "project")
+            .order_by(ContentCategory.order_index, ContentCategory.id)
+        )
+    )
+    if payload.content_category_id and (not category or category.kind != "project"):
+        raise HTTPException(status_code=422, detail="请选择有效的内容分区")
     project = ProjectSubmission(
         owner_id=user.id,
+        content_category_id=category.id if category else None,
+        content_category=category,
         name=payload.name.strip(),
         slug=payload.slug,
         summary=payload.summary.strip(),
@@ -109,17 +129,30 @@ async def update_project(
     if project.status not in {PublicationStatus.draft, PublicationStatus.rejected}:
         raise HTTPException(status_code=409, detail="当前状态不可编辑")
     duplicate = await session.scalar(
-        select(ProjectSubmission).where(
+        select(ProjectSubmission).options(selectinload(ProjectSubmission.content_category)).where(
             ProjectSubmission.slug == payload.slug, ProjectSubmission.id != project_id
         )
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="项目标识已存在")
+    category = (
+        await session.get(ContentCategory, payload.content_category_id)
+        if payload.content_category_id
+        else await session.scalar(
+            select(ContentCategory)
+            .where(ContentCategory.kind == "project")
+            .order_by(ContentCategory.order_index, ContentCategory.id)
+        )
+    )
+    if payload.content_category_id and (not category or category.kind != "project"):
+        raise HTTPException(status_code=422, detail="请选择有效的内容分区")
     for field in ("name", "slug", "summary", "description_markdown", "license_name"):
         setattr(project, field, getattr(payload, field))
     project.repository_url = str(payload.repository_url)
     project.demo_url = str(payload.demo_url) if payload.demo_url else None
     project.tech_stack = json.dumps(payload.tech_stack, ensure_ascii=False)
+    project.content_category_id = category.id if category else None
+    project.content_category = category
     project.review_note = None
     project.status = PublicationStatus.draft
     await session.commit()
@@ -148,7 +181,7 @@ async def submit_project(
 @router.get("/{slug}", response_model=ProjectOut)
 async def get_project(slug: str, session: AsyncSession = Depends(get_session)) -> ProjectOut:
     project = await session.scalar(
-        select(ProjectSubmission).where(
+        select(ProjectSubmission).options(selectinload(ProjectSubmission.content_category)).where(
             ProjectSubmission.slug == slug, ProjectSubmission.status == PublicationStatus.published
         )
     )

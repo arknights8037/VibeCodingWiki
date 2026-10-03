@@ -58,7 +58,7 @@ draft ──submit──> pending_review ──approve──> published
 
 ## MCP
 
-- Streamable HTTP：`POST/GET/DELETE /mcp`，协议目标 `2026-07-28`。
+- Streamable HTTP：`POST/GET/DELETE /mcp`，管理员写入端点为 `POST/GET/DELETE /mcp/admin`，协议目标 `2026-07-28`。
 - 工具输入/输出：
   - `search_wiki(q, category?, limit=10)` → `{slug,title,summary}[]`
   - `get_wiki_article(slug)` → 完整发布词条或 `error`
@@ -67,7 +67,8 @@ draft ──submit──> pending_review ──approve──> published
   - `list_projects(limit=20)` → 发布项目数组
   - `list_skills()` → 发布 Skill 数组
 - 资源：`wiki://articles/{slug}`、`course://lessons/{slug}`。
-- MCP 不支持写入、登录、草稿、投稿人、审核或管理员信息。
+- 公开 `/mcp` 不支持写入、登录、草稿、投稿人、审核或管理员信息。
+- `/mcp/admin` 使用 `Authorization: Bearer <管理员 MCP 令牌>`（全局管理员令牌或管理员账户个人 MCP 凭据），始终要求凭证；当前提供 `update_wiki_article`、`update_lesson` 和 `update_course`，只更新已有内容并分别记录 `wiki.update.mcp`、`lesson.update.mcp`、`course.update.mcp` 审计事件。
 
 ## 后台管理补充接口
 

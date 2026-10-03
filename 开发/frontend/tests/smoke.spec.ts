@@ -50,7 +50,7 @@ test("homepage exposes the learning path and search", async ({ page }) => {
     page.locator("main").getByRole("link", { name: /Vibe Coding 基本概念/ }),
   ).toBeVisible();
   await page.getByRole("navigation", {name:"页面切换"}).getByRole("link", {name:"知识库", exact:true}).click();
-  await page.getByLabel("关键词", {exact:true}).fill("Git");
-  await page.getByRole("button", {name:"查询", exact:true}).click();
+  await page.getByLabel("搜索知识库", {exact:true}).fill("Git");
+  await page.getByRole("button", {name:"搜索当前页面", exact:true}).click();
   await expect(page).toHaveURL(/\/wiki\?q=Git/);
 });

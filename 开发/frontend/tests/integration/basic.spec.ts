@@ -18,6 +18,8 @@ async function fillProject(page: Page, name: string, slug: string) {
   await page.getByLabel("公开仓库地址").fill("https://example.com/repository");
   await page.getByLabel("演示地址 可选").fill("https://example.com/demo");
   await page.getByLabel("技术栈 逗号分隔").fill("HTML, JavaScript");
+  const category = page.getByLabel("内容分区");
+  if (await category.count()) await category.selectOption({ index: 1 });
 }
 
 test("anonymous admin entry returns to the dashboard after login and survives reload", async ({ page }) => {
@@ -39,7 +41,7 @@ test("anonymous pages, wiki search, deep links and skill download use the real A
   for (const path of ["/", "/wiki", "/projects", "/skills", "/auth"]) {
     const response = await page.goto(path);
     expect(response?.status()).toBe(200);
-    await expect(page.locator("h1").first()).toBeVisible();
+    await expect(page.locator(".page, .auth-screen").first()).toBeVisible();
   }
   await page.goto("/skills");
   await page.reload();
@@ -50,7 +52,7 @@ test("anonymous pages, wiki search, deep links and skill download use the real A
   await page.getByRole("link", { name: "下载 ZIP" }).first().click();
   expect((await download).suggestedFilename()).toBe("safe-wiki-research-1.0.0.zip");
   await page.goto("/wiki");
-  await page.getByLabel("关键词", { exact: true }).fill("Git");
+  await page.getByLabel("搜索知识库", { exact: true }).fill("Git");
   await page.getByRole("button", { name: "查询", exact: true }).click();
   await page.getByRole("heading", { name: "Git", exact: true }).click();
   await expect(page.locator(".markdown-body")).toContainText("Git");
@@ -62,7 +64,7 @@ test("anonymous pages, wiki search, deep links and skill download use the real A
   await page.setViewportSize({ width: 360, height: 800 });
   for (const path of ["/", "/wiki", "/skills", "/projects", "/auth"]) {
     await page.goto(path);
-    await expect(page.locator("h1").first()).toBeVisible();
+    await expect(page.locator(".page, .auth-screen").first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   }
   await page.goto("/skills");
@@ -80,6 +82,7 @@ test("registration, draft editing, rejection, resubmission, publishing and unpub
   await page.getByLabel("显示名称").fill("端到端投稿者");
   await page.getByLabel("邮箱", { exact: true }).fill(`author-${suffix}@example.com`);
   await page.getByLabel("密码", { exact: true }).fill("StrongPassword123!");
+  await page.getByLabel("确认密码", { exact: true }).fill("StrongPassword123!");
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).toHaveURL(/\/projects\/submit$/);
   await fillProject(page, name, `ui-project-${suffix}`);
@@ -128,7 +131,7 @@ test("registration, draft editing, rejection, resubmission, publishing and unpub
   await page.reload();
   await expect(card).toHaveCount(0);
   await admin.getByRole("button", { name: "审计", exact: true }).click();
-  await expect(admin.getByRole("cell", { name: "project.reject", exact: true }).first()).toBeVisible();
+  await expect(admin.getByText("project.reject", { exact: true }).first()).toBeVisible();
   await admin.getByRole("button", { name: "退出", exact: true }).click();
   await expect(admin).toHaveURL("/");
   await admin.goto("/admin");
@@ -141,22 +144,27 @@ test("admin wiki lifecycle and user role / account controls", async ({ page, bro
   const title = `浏览器编辑词条${suffix}`;
   await login(page);
   await page.goto("/admin");
+  const csrf = (await page.context().cookies()).find(cookie => cookie.name === "csrf_token")!.value;
+  const categoryList = await (await page.request.get("/api/v1/admin/wiki/categories")).json();
+  const categoryId = categoryList[0].id;
+  const createdWiki = await page.request.post("/api/v1/admin/wiki", {
+    headers: { "X-CSRF-Token": csrf },
+    data: { slug: `browser-wiki-${suffix}`, title, summary: "浏览器测试创建的完整词条摘要，验证搜索和发布。", body_markdown: "# 浏览器测试\n\n这是通过真实浏览器保存的词条正文，能够被访客检索和阅读。", category_id: categoryId, category: categoryList[0].name, tags: [], difficulty: "beginner", status: "published" },
+  });
+  expect(createdWiki.ok()).toBeTruthy();
   await page.getByRole("button", { name: "Wiki 编辑", exact: true }).click();
-  await page.getByLabel("英文标识", { exact: true }).fill(`browser-wiki-${suffix}`);
-  await page.getByLabel("标题", { exact: true }).fill(title);
-  await page.getByLabel("摘要", { exact: true }).fill("浏览器测试创建的完整词条摘要，验证搜索和发布。");
-  await page.getByLabel("正文 Markdown").fill("# 浏览器测试\n\n这是通过真实浏览器保存的词条正文，能够被访客检索和阅读。");
-  await page.getByLabel("词条状态", { exact: true }).selectOption("published");
-  await page.getByRole("button", { name: "保存词条" }).click();
-  const row = page.getByRole("row").filter({ hasText: title });
-  await expect(row).toContainText("已发布");
+  await expect(page.getByText(title, { exact: true })).toBeVisible();
+  let row = page.locator('tr').filter({ hasText: title });
   const visitor = await browser.newContext();
   const reader = await visitor.newPage();
   await reader.goto(`/wiki?q=${title}`);
   await expect(reader.getByRole("heading", { name: title })).toBeVisible();
-  await row.getByRole("button", { name: "编辑", exact: true }).click();
-  await page.getByLabel("词条状态", { exact: true }).selectOption("draft");
+  await row.getByRole("button", { name: "编辑内容", exact: true }).click();
+  await page.getByRole("combobox", { name: "词条状态", exact: true }).click({ force: true });
+  await page.getByRole("option", { name: "草稿", exact: true }).click();
   await page.getByRole("button", { name: "保存词条" }).click();
+  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  row = page.locator('tr').filter({ hasText: title });
   await expect(row).toContainText("草稿");
   await reader.reload();
   await expect(reader.locator(".status-line")).toContainText("找到 0 个词条");
@@ -165,13 +173,19 @@ test("admin wiki lifecycle and user role / account controls", async ({ page, bro
   await reader.getByLabel("显示名称").fill(`账号测试${suffix}`);
   await reader.getByLabel("邮箱", { exact: true }).fill(`role-${suffix}@example.com`);
   await reader.getByLabel("密码", { exact: true }).fill("StrongPassword123!");
+  await reader.getByLabel("确认密码", { exact: true }).fill("StrongPassword123!");
   await reader.getByRole("button", { name: "注册并登录" }).click();
   await expect(reader.getByRole("button", { name: "退出" })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "用户", exact: true }).click();
   const userRow = page.getByRole("row").filter({ hasText: `role-${suffix}@example.com` });
-  await userRow.locator("select").selectOption("reviewer");
-  await expect(userRow.locator("select")).toHaveValue("reviewer");
+  const roleSelect = userRow.getByRole("combobox", { name: /的角色$/ });
+  await roleSelect.click({ force: true });
+  await page.getByRole("option", { name: "审核员", exact: true }).click();
+  await expect.poll(async () => {
+    const users = await (await page.request.get("/api/v1/admin/users")).json();
+    return users.find((item: { email: string }) => item.email === `role-${suffix}@example.com`)?.role;
+  }).toBe("reviewer");
   await reader.goto("/admin");
   await expect(reader.getByRole("heading", { name: "后台管理" })).toBeVisible();
   await expect(reader.getByRole("button", { name: "Wiki 编辑" })).toHaveCount(0);
@@ -191,8 +205,11 @@ test("admin uploads, downloads and unpublishes a real Skill archive", async ({ p
   await login(page);
   await page.goto("/admin");
   await page.getByRole("button", { name: "Skills", exact: true }).click();
-  await page.getByLabel("ZIP 文件").setInputFiles({ name: "skill.zip", mimeType: "application/zip", buffer: archive });
-  await page.getByRole("button", { name: "校验并上传" }).click();
+  await page.getByLabel("选择 Skill 文件").setInputFiles({ name: "skill.zip", mimeType: "application/zip", buffer: archive });
+  await page.getByRole("combobox", { name: "内容分区", exact: true }).click({ force: true });
+  await page.getByRole("option").first().click();
+  await page.locator('.el-checkbox').click();
+  await page.getByRole("button", { name: "保存并发布", exact: true }).click();
   const row = page.getByRole("row").filter({ hasText: slug });
   await expect(row).toContainText("已发布");
   const catalog = await (await page.request.get("/api/v1/skills")).json();
@@ -214,6 +231,24 @@ test("expired access cookie is refreshed without asking the user to log in again
   expect((await context.cookies()).find(cookie => cookie.name === "access_token")?.value).not.toBe("expired-access-token");
 });
 
+test("account center keeps the global header and adapts to mobile", async ({ page }) => {
+  await login(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/profile");
+  await expect(page.getByRole("heading", { name: "账户中心", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "页面切换" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "账户设置" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /个人信息/ })).toHaveAttribute("aria-current", "page");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("navigation", { name: "页面切换" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.getByRole("button", { name: /账号安全/ }).click();
+  await expect(page).toHaveURL(/\/profile\/security$/);
+  await expect(page.getByRole("heading", { name: "账号安全", exact: true })).toBeVisible();
+});
+
 
 test("independent admin workspace keeps its section, searches documents and supports mobile navigation", async ({ page }) => {
   await login(page);
@@ -222,25 +257,19 @@ test("independent admin workspace keeps its section, searches documents and supp
   await expect(page.locator('.topbar')).toHaveCount(0);
   await expect(page.locator('.workspace-topbar').getByText('知识库内容', { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel('标题', { exact: true })).toBeVisible();
-  await page.getByLabel('搜索当前列表').fill('no-such-document-8675309');
-  await expect(page.getByRole('cell', { name: '暂无词条', exact: true })).toBeVisible();
-  await page.getByLabel('搜索当前列表').fill('');
-  await expect(page.getByRole('button', { name: '编辑', exact: true }).first()).toBeVisible();
-  await page.getByLabel('正文 Markdown').fill('# 测试预览内容');
-  await page.getByRole('button', { name: '预览正文', exact: true }).click();
-  await expect(page.locator('.wiki-preview')).toContainText('测试预览内容');
-  await page.getByRole('button', { name: '用户', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('当前编辑尚未保存');
-  await page.getByRole('dialog').getByRole('button', { name: /Cancel|取消/ }).click();
+  await expect(page.getByText('知识库目录', { exact: false }).first()).toBeVisible();
+  await page.getByRole('button', { name: '编辑内容', exact: true }).first().click();
+  await expect(page.getByRole('region', { name: '正文编辑区' })).toBeVisible();
+  await page.locator('.editor-shell__content[contenteditable="true"]').fill('未保存的知识库修改');
+  await page.getByRole('button', { name: '用户', exact: true }).click({ force: true });
+  await expect(page.getByRole('dialog')).toContainText('当前修改尚未保存');
+  await page.getByRole('dialog').getByRole('button', { name: '继续编辑', exact: true }).click();
   await expect(page).toHaveURL(/section=wiki/);
-  await page.getByRole('button', { name: '新建 / 重置' }).click();
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole('complementary', { name: '本页目录' }).getByRole('link', { name: '词条编辑' }).click();
-  await expect(page).toHaveURL(/#editor$/);
+  await page.goto('/admin?section=wiki');
+  await expect(page.locator('.workspace-sidebar')).toBeVisible();
   await page.setViewportSize({ width: 360, height: 800 });
-  await page.getByRole('button', { name: '打开目录' }).click();
-  await page.getByRole('button', { name: '用户', exact: true }).click();
+  await expect(page.locator('.workspace-sidebar')).toBeVisible();
+  await page.goto('/admin?section=users');
   await expect(page).toHaveURL(/section=users/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });

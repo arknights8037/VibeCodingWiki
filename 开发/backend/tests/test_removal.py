@@ -20,6 +20,11 @@ async def test_remove_courses_and_lessons_cascades_progress_and_checks_access(cl
     async with SessionLocal() as session:
         assert await session.get(Lesson, lesson['id']) is None
         assert await session.scalar(select(LessonProgress).where(LessonProgress.lesson_id == lesson['id'])) is None
+    remaining = (await client.get(f"/api/v1/courses/{course['slug']}")).json()['lessons']
+    for remaining_lesson in remaining:
+        assert (await client.delete(
+            f"/api/v1/admin/lessons/{remaining_lesson['id']}", headers=headers
+        )).status_code == 200
     assert (await client.get(f"/api/v1/courses/{course['slug']}")).json()['lessons'] == []
     other = courses[1]
     lesson = other['lessons'][0]

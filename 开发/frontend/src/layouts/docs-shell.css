@@ -81,7 +81,7 @@
 .docs-shell .filter-bar { background: #faf9f6; padding: 18px; border: 1px solid #eee8df; border-radius: 5px; }
 .docs-shell .filter-bar input, .docs-shell .filter-bar select, .docs-shell .form-grid input, .docs-shell .form-grid textarea { border-radius: 4px; border-color: #dfdad0; min-width: 0; max-width: 100%; font-size: 13px; }
 .docs-shell .form-panel { border: 1px solid #e9e5da; border-radius: 6px; padding: 22px; }
-.docs-shell .form-actions button, .docs-shell .filter-bar button { background: #536f84; border-color: #536f84; border-radius: 4px; font-size: 13px; }
+.docs-shell .form-actions > button:not(.el-button), .docs-shell .filter-bar > button { background: #536f84; border-color: #536f84; border-radius: 4px; font-size: 13px; }
 .docs-shell .split { grid-template-columns: minmax(0, 1fr); gap: 22px; }
 .docs-shell main [id] { scroll-margin-top: 80px; }
 .docs-skip { position: fixed; top: -100px; left: 280px; z-index: 80; padding: 8px 16px; background: white; }

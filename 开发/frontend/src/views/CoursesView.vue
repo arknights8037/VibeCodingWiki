@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { api, apiError } from "@/services/api";
 import { usePreferencesStore } from "@/stores/preferences";
 import type { Course } from "@/types";
 const prefs = usePreferencesStore();
 const t = prefs.text;
+const route = useRoute();
 const courses = ref<Course[]>([]);
 const loading = ref(true);
 const error = ref("");
-const query = ref("");
+const query = ref(String(route.query.q || ""));
+watch(() => route.query.q, value => { query.value = String(value || ""); });
 const filtered = computed(() => courses.value.filter(c => (prefs.level === "all" || prefs.level === c.difficulty) && (c.title + c.summary).toLowerCase().includes(query.value.trim().toLowerCase())));
 const level = (value: string) => ({ beginner: t('基础','Beginner'), intermediate: t('进阶','Intermediate'), advanced: t('专业','Advanced') }[value] || value);
 async function load() {
@@ -21,12 +24,8 @@ onMounted(load);
 </script>
 <template>
   <div class="page course-directory">
-    <div class="docs-page-icon" aria-hidden="true">▤</div>
-    <h1>{{ t("课程列表", "Course library") }}</h1>
-    <p class="lede">{{ t("从这里开始，按自己的节奏学习。点击课程即可阅读，无需登录。", "Learn at your own pace. Open any course to read, no account required.") }}</p>
-    <div class="docs-callout"><span aria-hidden="true">☞</span><div>{{ t("第一次来？从第一课开始。", "New here? Start with the first course.") }}<br /><span>{{ t("也可以直接选择你现在需要的内容，边做边学。", "Or choose what you need and learn by doing.") }}</span></div></div>
     <section>
-      <div class="directory-toolbar flex items-center justify-between gap-4"><h2>{{ t("课程", "Courses") }} <span>{{ filtered.length }}</span></h2><el-input v-model="query" clearable aria-label="筛选课程" :placeholder="t('查找课程…', 'Find a course…')" /></div>
+      <div class="directory-toolbar flex items-center justify-between gap-4"><h1 :aria-label="t('课程列表', 'Course library')">{{ t("课程列表", "Course library") }} <span aria-hidden="true">{{ filtered.length }}</span></h1></div>
       <p v-if="loading" role="status">正在加载课程…</p>
       <el-alert v-else-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">重新加载</el-button></el-alert>
       <div v-else class="course-document-list">

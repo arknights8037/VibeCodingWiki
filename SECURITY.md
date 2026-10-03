@@ -14,7 +14,7 @@
 - HttpOnly/SameSite Cookie；写请求 CSRF；生产环境使用 HTTPS 与 Secure Cookie。
 - API 端 RBAC、资源所有权与“审核者不是作者”检查。
 - Markdown DOMPurify；Skill ZIP 大小、数量、单根 `SKILL.md` 与路径穿越校验；上传脚本永不执行。
-- MCP/公开 REST 只暴露 `published`；审计日志不记录令牌、密码或 Cookie。
+- 公开 MCP/REST 只暴露 `published`；管理员 `/mcp/admin` 写入端点始终要求 Bearer 凭证；审计日志不记录令牌、密码或 Cookie。
 
 ## 部署清单
 

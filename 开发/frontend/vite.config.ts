@@ -12,7 +12,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": apiTarget,
-      "^/skills/[^/]+/[^/]+/(SKILL\\.md|download\\.zip)$": apiTarget,
+      "^/skills/[^/]+/[^/]+/": apiTarget,
       "/healthz": apiTarget,
       "/mcp": apiTarget,
       "/media": apiTarget,

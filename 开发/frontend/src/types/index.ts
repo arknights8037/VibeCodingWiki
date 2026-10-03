@@ -25,6 +25,7 @@ export interface Lesson {
   title: string;
   objective: string;
   body_markdown: string;
+  content_json?: string;
   practice: string;
   completion_criteria: string;
   estimated_minutes: number;
@@ -50,6 +51,7 @@ export interface WikiArticle {
   title: string;
   summary: string;
   body_markdown?: string;
+  content_json?: string;
   difficulty: string;
   category: { id: number; slug: string; name: string; parent_id?: number | null };
   order_index?: number;
@@ -82,6 +84,10 @@ export interface Project {
   review_note?: string | null;
   submitted_at?: string | null;
   published_at?: string | null;
+  category_id?: number | null;
+  content_category_id?: number | null;
+  category?: { id: number; slug: string; name: string } | null;
+  content_category?: { id: number; kind: string; slug: string; name: string } | null;
 }
 
 export interface Skill {
@@ -92,4 +98,8 @@ export interface Skill {
   license_name?: string | null;
   compatibility?: string | null;
   sha256: string;
+  category_id?: number | null;
+  content_category_id?: number | null;
+  category?: { id: number; slug: string; name: string } | null;
+  content_category?: { id: number; kind: string; slug: string; name: string } | null;
 }

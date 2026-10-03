@@ -12,6 +12,7 @@ test('login and registration are standalone pages and preserve the intended dest
   await page.getByLabel('显示名称', { exact: true }).fill('独立页面用户');
   await page.getByLabel('邮箱', { exact: true }).fill(`standalone-${Date.now()}@example.com`);
   await page.getByLabel('密码', { exact: true }).fill('StrongPassword123!');
+  await page.getByLabel('确认密码', { exact: true }).fill('StrongPassword123!');
   await page.getByRole('button', { name: '注册并登录', exact: true }).click();
   await expect(page).toHaveURL('/projects/mine');
   await page.getByRole('button', { name: '退出', exact: true }).click();

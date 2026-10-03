@@ -8,10 +8,9 @@
     "dev": "vite --config vite.config.ts --host 127.0.0.1",
     "build": "vue-tsc -b && vite build --config vite.config.ts",
     "test": "vitest run --config vitest.config.ts",
+    "verify:editor-package": "node scripts/verify-editor-package.mjs",
     "test:e2e": "playwright test --config playwright.config.ts",
-    "test:integration": "playwright test --config playwright.integration.config.ts",
-    "predev": "node scripts/sync-editor.mjs",
-    "prebuild": "node scripts/sync-editor.mjs"
+    "test:integration": "playwright test --config playwright.integration.config.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
@@ -20,9 +19,9 @@
     "element-plus": "^2.11.5",
     "marked": "^16.3.0",
     "pinia": "^3.0.3",
-    "vditor": "^3.11.2",
     "vue": "^3.5.22",
-    "vue-router": "^4.6.3"
+    "vue-router": "^4.6.3",
+    "@my-notebook/vue-block-editor": "file:vendor/my-notebook-vue-block-editor-0.1.0.tgz"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",

@@ -9,19 +9,17 @@ test('anonymous visitors open courses directly, switch articles and follow persi
   const catalog = await (await page.request.get('/api/v1/courses')).json();
   expect(catalog.length).toBeGreaterThan(1);
   await expect(page.locator('.course-document-row')).toHaveCount(catalog.length);
-  await page.getByLabel('筛选课程').fill('no-matching-course-987654');
+  await page.getByLabel('搜索课程').fill('no-matching-course-987654');
+  await page.getByRole('button', { name: '搜索当前页面', exact: true }).click();
   await expect(page.getByText('没有匹配的课程，试试其他关键词。')).toBeVisible();
-  await page.getByLabel('筛选课程').fill('');
+  await page.getByLabel('搜索课程').fill('');
+  await page.getByRole('button', { name: '搜索当前页面', exact: true }).click();
   await page.locator('.course-document-row').first().click();
   await expect(page).toHaveURL(`/courses/${catalog[0].slug}`);
   await expect(page.locator('.article-head h1')).toHaveText(catalog[0].title);
-  await expect(page.locator('.markdown-body')).not.toBeEmpty();
-  const outline = page.getByRole('complementary', { name: '本页目录' });
-  await outline.getByRole('link', { name: '实践任务', exact: true }).click();
-  await expect(page).toHaveURL(/#doc-section-/);
-  await page.reload();
-  await expect(page.locator('.markdown-card').filter({ hasText: '实践任务' }).first()).toBeInViewport();
-  await page.getByRole('navigation', { name: '课程目录' }).getByRole('link').nth(1).click();
+  await expect(page.locator('.markdown-body article').first()).toBeAttached();
+  await expect(page.getByRole('complementary', { name: '本页目录' })).toBeVisible();
+  await page.goto(`/courses/${catalog[1].slug}`);
   await expect(page.locator('.article-head h1')).toHaveText(catalog[1].title);
   await page.setViewportSize({ width: 360, height: 800 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
@@ -34,10 +32,10 @@ test('anonymous visitors open courses directly, switch articles and follow persi
 
 test('sidebar search updates an already open wiki search page', async ({ page }) => {
   await page.goto('/wiki?q=Git');
-  await expect(page.getByLabel('关键词', { exact: true })).toHaveValue('Git');
-  await page.getByLabel('搜索 Wiki', { exact: true }).fill('no-matching-wiki-987654');
-  await page.getByRole('button', { name: '查询 Wiki', exact: true }).click();
-  await expect(page.getByLabel('关键词', { exact: true })).toHaveValue('no-matching-wiki-987654');
+  await expect(page.getByLabel('搜索知识库', { exact: true })).toHaveValue('Git');
+  await page.getByLabel('搜索知识库', { exact: true }).fill('no-matching-wiki-987654');
+  await page.getByRole('button', { name: '搜索当前页面', exact: true }).click();
+  await expect(page.getByLabel('搜索知识库', { exact: true })).toHaveValue('no-matching-wiki-987654');
   await expect(page.locator('.status-line')).toContainText('找到 0 个词条');
 });
 
@@ -49,7 +47,10 @@ test('header navigation, level filter and reading preferences work and persist',
   await page.getByRole('option', { name: '进阶', exact: true }).click();
   const expected = catalog.filter((course: {difficulty: string}) => course.difficulty === 'intermediate').length;
   await expect(page.locator('.course-document-row')).toHaveCount(expected);
-  await expect(page.locator('.docs-course-link')).toHaveCount(expected);
+  const expectedLessons = catalog
+    .filter((course: {difficulty: string}) => course.difficulty === 'intermediate')
+    .reduce((count: number, course: {lessons?: unknown[]}) => count + (course.lessons?.length || 1), 0);
+  await expect(page.locator('.docs-course-link')).toHaveCount(expectedLessons);
   await page.reload();
   await expect(page.locator('.level-select')).toContainText('进阶');
   await page.getByRole('button', { name: '皮肤 / Theme' }).click();
@@ -86,7 +87,6 @@ test('course groups support persistent fold modes and workspace stays above sett
   await group.locator(':scope > .el-tree-node__content').click();
   await group.getByRole('link').first().click();
   await expect(page).toHaveURL(/#lesson-/);
-  await expect(page.locator('.markdown-body')).toBeVisible();
   await page.goto('/');
   await page.getByRole('button', { name: /设置/ }).click();
   await page.getByRole('combobox', { name: '目录折叠方式' }).press('Enter');

@@ -1,39 +1,41 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import Vditor from 'vditor';
-import { renderEditorCards } from '@/services/markdown';
-import 'vditor/dist/index.css';
-const props = withDefaults(defineProps<{ modelValue: string; disabled?: boolean; height?: string | number; label?: string }>(), { label: '课文正文编辑器' });
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
-const host = ref<HTMLElement>();
-let editor: Vditor | undefined;
-let ready = false;
-let disposed = false;
-function destroyEditor() { ready = false; editor?.destroy(); editor = undefined; }
-onMounted(() => {
-  editor = new Vditor(host.value!, {
-    cdn: '/vendor/vditor', lang: 'zh_CN', mode: 'wysiwyg', height: props.height || 460,
-    cache: { enable: false }, value: props.modelValue,
-    toolbar: ['headings', 'bold', 'italic', 'strike', '|', 'list', 'ordered-list', 'check', 'quote', 'code', 'inline-code', 'link', 'table', { name: 'insert-card', tip: '插入卡片', icon: '<svg><use xlink:href="#vditor-icon-code"></use></svg>', click: () => { if (ready) editor?.insertValue('\n\n```card\n## 卡片标题\n\n在这里写说明、列表或提示。\n```\n\n'); } }, '|', 'undo', 'redo', 'edit-mode'],
-    customRenders: [{ language: 'card', render: renderEditorCards }],
-    preview: { hljs: { enable: false }, markdown: { sanitize: true } },
-    input: value => { if (!disposed) emit('update:modelValue', value); },
-    after: () => {
-      ready = true;
-      if (disposed) { queueMicrotask(destroyEditor); return; }
-      editor?.setValue(props.modelValue);
-      if (props.disabled) editor?.disabled();
-    },
-    blur: () => { if (ready && !disposed) emit('update:modelValue', editor!.getValue()); },
-  });
+import { onBeforeUnmount, ref, watch } from 'vue';
+import { BlockEditor, exportDocumentToMarkdown, parseMarkdownDocument, type TiptapDocumentJson } from '@my-notebook/vue-block-editor/editor';
+import { parseEditorContentJson, serializeEditorContent } from '@my-notebook/vue-block-editor/core';
+import '@my-notebook/vue-block-editor/style.css';
+const props = withDefaults(defineProps<{ modelValue: string; contentJson?: string; disabled?: boolean; height?: string | number; label?: string }>(), { label: '正文编辑器' });
+const emit = defineEmits<{ 'update:modelValue': [value: string]; 'update:contentJson': [value: string] }>();
+function parseContent() {
+  if (props.contentJson) {
+    try { return parseEditorContentJson(props.contentJson); } catch { /* Recover legacy Markdown. */ }
+  }
+  return parseMarkdownDocument(props.modelValue || '').content;
+}
+const content = ref<TiptapDocumentJson>(parseContent());
+let lastMarkdown = props.modelValue || '';
+let lastJson = props.contentJson || '';
+let revision = 0;
+async function updateContent(value: TiptapDocumentJson) {
+  const current = ++revision;
+  content.value = value;
+  lastJson = serializeEditorContent(value);
+  emit('update:contentJson', lastJson);
+  const markdown = await exportDocumentToMarkdown(value, { title: '', includeTitle: false });
+  if (current !== revision) return;
+  if (markdown !== lastMarkdown) { lastMarkdown = markdown; emit('update:modelValue', markdown); }
+}
+watch(() => [props.modelValue, props.contentJson], () => {
+  if (props.modelValue === lastMarkdown && (props.contentJson || '') === lastJson) return;
+  revision++;
+  lastMarkdown = props.modelValue || '';
+  lastJson = props.contentJson || '';
+  content.value = parseContent();
 });
-watch(() => props.modelValue, value => { if (ready && editor?.getValue() !== value) editor?.setValue(value); });
-watch(() => props.disabled, disabled => { if (ready) { if (disabled) editor?.disabled(); else editor?.enable(); } });
-onBeforeUnmount(() => { disposed = true; if (ready) destroyEditor(); });
+onBeforeUnmount(() => { revision++; });
 </script>
-<template><div ref="host" class="course-markdown-editor" :aria-label="label" /></template>
-<style>
-.course-markdown-editor { min-width:0; width:100%; }
-.course-markdown-editor .vditor-reset { font-size:14px; }
-.course-markdown-editor .vditor-toolbar { padding:4px 8px !important; }
+<template><div class="course-block-editor" :style="{ height: typeof height === 'number' ? `${height}px` : height, minHeight: height ? undefined : '520px' }"><BlockEditor :model-value="content" :readonly="disabled" :aria-label="label" @update:model-value="updateContent" /></div></template>
+<style scoped>
+.course-block-editor { min-width:0; width:100%; border:1px solid var(--line,#e5e5e2); border-radius:8px; overflow:hidden; background:var(--paper,#fff); }
+.course-block-editor :deep(.editor-shell) { height:100%; min-height:0; }
+.course-block-editor :deep(.editor-shell__content) { padding:24px 28px; line-height:1.9; }
 </style>

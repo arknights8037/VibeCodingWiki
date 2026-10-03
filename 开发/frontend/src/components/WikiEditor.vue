@@ -18,7 +18,7 @@ const busy = ref(false);
 const error = ref('');
 const id = ref<number>();
 const baseline = ref('');
-const form = reactive({ title:'', slug:'', summary:'', body_markdown:'', category_id:null as number | null, category:'AI Coding', tags:'', difficulty:'beginner', status:'draft', order_index:0 });
+const form = reactive({ title:'', slug:'', summary:'', body_markdown:'', content_json:'', category_id:null as number | null, category:'AI Coding', tags:'', difficulty:'beginner', status:'draft', order_index:0 });
 const categoryForm = reactive({ name:'', slug:'', parent_id:null as number | null, order_index:0 });
 const snapshot = () => JSON.stringify(mode.value === 'article' ? form : categoryForm);
 const dirty = computed(() => mode.value !== 'list' && snapshot() !== baseline.value);
@@ -44,7 +44,7 @@ async function back() { if (await canLeave()) mode.value = 'list'; }
 async function editArticle(article?: Article, categoryId?: number) {
   if (!await canLeave()) return;
   id.value = article?.id; mode.value = 'article'; error.value = '';
-  Object.assign(form, { title:article?.title || '', slug:article?.slug || '', summary:article?.summary || '', body_markdown:article?.body_markdown || '', category_id:article?.category.id ?? categoryId ?? null, category:article?.category.name || 'AI Coding', tags:article?.tags.map(t => t.name).join(', ') || '', difficulty:article?.difficulty || 'beginner', status:article?.status || 'draft', order_index:article?.order_index || 0 });
+  Object.assign(form, { title:article?.title || '', slug:article?.slug || '', summary:article?.summary || '', body_markdown:article?.body_markdown || '', content_json:article?.content_json || '', category_id:article?.category.id ?? categoryId ?? null, category:article?.category.name || 'AI Coding', tags:article?.tags.map(t => t.name).join(', ') || '', difficulty:article?.difficulty || 'beginner', status:article?.status || 'draft', order_index:article?.order_index || 0 });
   baseline.value = snapshot();
 }
 async function editCategory(category?: WikiCategory) {
@@ -89,7 +89,7 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
       </AdminListTable>
     </template>
     <ContentEditorLayout v-else-if="mode === 'article'">
-      <MarkdownEditor :key="id || 'new'" v-model="form.body_markdown" :disabled="busy" label="词条正文编辑器" height="calc(100dvh - 112px)" />
+      <MarkdownEditor :key="id || 'new'" v-model="form.body_markdown" v-model:content-json="form.content_json" :disabled="busy" label="词条正文编辑器" height="calc(100dvh - 112px)" />
       <template #actions><el-button :icon="Back" :disabled="busy" @click="back">返回列表</el-button><el-button :icon="DocumentChecked" type="primary" :loading="busy" @click="save">保存词条</el-button><span role="status">{{ dirty ? '有未保存的修改' : '暂无未保存修改' }}</span></template>
       <template #properties><el-form label-position="top" :disabled="busy" @submit.prevent="save">
         <el-form-item label="标题"><el-input v-model="form.title" aria-label="标题" maxlength="180" /></el-form-item>

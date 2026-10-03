@@ -59,21 +59,28 @@ def _validate_skill_archive(data: bytes) -> dict:
     skill_md = archive.read(skill_entries[0]).decode("utf-8")
     if not skill_md.startswith("---"):
         raise SkillValidationError("SKILL.md 缺少 YAML frontmatter")
-    parts = skill_md.split("---", 2)
-    if len(parts) < 3:
+    frontmatter = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", skill_md, re.DOTALL)
+    if not frontmatter:
         raise SkillValidationError("SKILL.md frontmatter 未闭合")
-    metadata = yaml.safe_load(parts[1]) or {}
+    metadata = yaml.safe_load(frontmatter.group(1)) or {}
     if not isinstance(metadata, dict):
         raise SkillValidationError("frontmatter 必须是包含 name 和 description 的对象")
-    name = str(metadata.get("name", ""))
-    description = str(metadata.get("description", ""))
-    if not NAME_RE.fullmatch(name) or len(name) > 64:
+    name = metadata.get("name", "")
+    description = metadata.get("description", "")
+    if not isinstance(name, str) or not NAME_RE.fullmatch(name) or len(name) > 64:
         raise SkillValidationError("skill name 不符合规范")
-    if not description or len(description) > 1024:
+    if not isinstance(description, str) or not description.strip() or len(description) > 1024:
         raise SkillValidationError("skill description 不符合规范")
     for field in ("license", "compatibility"):
         if metadata.get(field) is not None and not isinstance(metadata[field], str):
             raise SkillValidationError(f"{field} 必须是文本")
+    if "compatibility" in metadata and not 1 <= len(metadata["compatibility"] or "") <= 500:
+        raise SkillValidationError("compatibility 长度必须为 1–500")
+    if "metadata" in metadata and (not isinstance(metadata["metadata"], dict) or
+            any(not isinstance(k, str) or not isinstance(v, str) for k, v in metadata["metadata"].items())):
+        raise SkillValidationError("metadata 必须是文本键值对")
+    if "allowed-tools" in metadata and not isinstance(metadata["allowed-tools"], str):
+        raise SkillValidationError("allowed-tools 必须是文本")
     # Strip a single enclosing directory consistently, preserving relative links.
     root = skill_entries[0].filename.replace("\\", "/").removesuffix("SKILL.md")
     if root and any(not item.filename.replace("\\", "/").startswith(root) for item in entries):
