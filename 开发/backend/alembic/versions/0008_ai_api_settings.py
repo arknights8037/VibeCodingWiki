@@ -1,6 +1,7 @@
 """Add administrator-managed AI API settings."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0008_ai_api_settings"

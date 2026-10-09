@@ -1,5 +1,6 @@
 """Add nested, ordered wiki categories and article ordering."""
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0004_nested_wiki_categories"

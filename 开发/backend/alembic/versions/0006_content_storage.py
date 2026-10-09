@@ -1,6 +1,7 @@
 """Version the account, skill ownership and structured content schema."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0006_content_storage"
