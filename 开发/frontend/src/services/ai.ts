@@ -75,6 +75,12 @@ async function responseError(response: Response): Promise<Error> {
  */
 export function createAdminAiCompletion(): MicroCompletion {
   return async (messages, signal, onDelta) => {
+    // Block editing expects a plain Markdown completion. Sending the agent's
+    // read/write tools here lets the model choose a tool call instead of
+    // returning replacement text, which the block editor cannot apply.
+    const isBlockEdit = messages.some(
+      (message) => message.role === 'system' && typeof message.content === 'string' && message.content.includes('块内编辑助手'),
+    );
     const response = await fetch(completionUrl(), {
       method: 'POST',
       credentials: 'include',
@@ -86,8 +92,7 @@ export function createAdminAiCompletion(): MicroCompletion {
       },
       body: JSON.stringify({
         messages,
-        tools: MICRO_AGENT_TOOLS,
-        tool_choice: 'auto',
+        ...(isBlockEdit ? {} : { tools: MICRO_AGENT_TOOLS, tool_choice: 'auto' }),
         stream: false,
       }),
     });
