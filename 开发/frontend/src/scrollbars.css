@@ -1,0 +1,69 @@
+:root {
+  --scrollbar-size: 6px;
+  --scrollbar-thumb: #d2d2d2;
+  --scrollbar-thumb-hover: #b8b8b8;
+}
+
+/* Use the native thin variant where pixel-sized scrollbars are unavailable. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Both standard properties must be auto for Chromium to use custom parts. */
+@supports selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:single-button,
+*::-webkit-scrollbar-button:double-button,
+*::-webkit-scrollbar-button:vertical:decrement,
+*::-webkit-scrollbar-button:vertical:increment,
+*::-webkit-scrollbar-button:horizontal:decrement,
+*::-webkit-scrollbar-button:horizontal:increment {
+  appearance: none;
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: 0;
+}
+
+/* Match Element Plus overlays while retaining their native-scrollbar hiding. */
+.el-scrollbar.el-scrollbar {
+  --el-scrollbar-bg-color: var(--scrollbar-thumb);
+  --el-scrollbar-hover-bg-color: var(--scrollbar-thumb-hover);
+  --el-scrollbar-opacity: 1;
+  --el-scrollbar-hover-opacity: 1;
+}
+
+.el-scrollbar .el-scrollbar__bar.is-vertical {
+  width: var(--scrollbar-size);
+}
+
+.el-scrollbar .el-scrollbar__bar.is-horizontal {
+  height: var(--scrollbar-size);
+}

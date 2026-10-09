@@ -75,9 +75,9 @@ async def refresh() -> int:
                 lesson.title = lesson_item["title"]
                 lesson.body_markdown = body
                 lesson.content_json = markdown_to_content(body)
-                lesson.objective = lesson_item["objective"]
-                lesson.practice = lesson_item["practice"]
-                lesson.completion_criteria = lesson_item["criteria"]
+                lesson.objective = ""
+                lesson.practice = ""
+                lesson.completion_criteria = ""
                 lesson.estimated_minutes = 40
                 lesson.order_index = lesson_order
                 lesson.status = PublicationStatus.published

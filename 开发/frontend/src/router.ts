@@ -7,8 +7,15 @@ const router = createRouter({
     { path: "/", component: () => import("@/views/HomeView.vue") },
     { path: "/courses", component: () => import("@/views/CoursesView.vue") },
     {
+      path: "/courses/:slug/:lessonSlug",
+      component: () => import("@/views/CourseDetailView.vue"),
+    },
+    {
       path: "/courses/:slug",
       component: () => import("@/views/CourseDetailView.vue"),
+      beforeEnter: to => to.hash.startsWith('#lesson-') && to.hash.length > 8
+        ? { path: `/courses/${to.params.slug}/${to.hash.slice(8)}`, query: to.query, replace: true }
+        : undefined,
     },
     { path: "/wiki", component: () => import("@/views/WikiView.vue") },
     {
@@ -26,7 +33,17 @@ const router = createRouter({
       component: () => import("@/views/MySubmissionsView.vue"),
       meta: { auth: true },
     },
-    { path: "/skills", component: () => import("@/views/SkillsView.vue") },
+    {
+      path: "/skills",
+      component: () => import("@/views/SkillsView.vue"),
+      beforeEnter: to => to.query.create === "1"
+        ? { path: "/skills/create", query: { ...(to.query.tab ? { tab: String(to.query.tab) } : {}) } }
+        : undefined,
+    },
+    { path: "/skills/create", component: () => import("@/views/SkillCreateView.vue"), meta: { auth: true } },
+    { path: "/skills/:slug/:version", component: () => import("@/views/SkillDetailView.vue") },
+    { path: "/tools", component: () => import("@/views/ToolsView.vue") },
+    { path: "/projects/:slug", component: () => import("@/views/ProjectsView.vue") },
     { path: "/profile", component: () => import("@/views/ProfileView.vue"), meta: { auth: true, account: true } },
     { path: "/profile/:section(info|security|projects|notifications)", component: () => import("@/views/ProfileView.vue"), meta: { auth: true, account: true } },
     { path: "/auth", redirect: to => ({ path: '/login', query: to.query }) },

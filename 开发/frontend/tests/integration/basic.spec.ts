@@ -117,13 +117,11 @@ test("registration, draft editing, rejection, resubmission, publishing and unpub
   await page.goto("/projects");
   const card = page.locator(".project-card").filter({ hasText: name });
   await expect(card.getByRole("link", { name: "打开演示" })).toHaveAttribute("href", "https://example.com/demo");
-  const disclosure = card.getByRole("button", { name: "查看项目说明", exact: true });
-  await expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  await disclosure.press("Enter");
-  await expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  await expect(card.locator(".markdown-body")).toContainText("已补充运行方法");
-  await disclosure.press("Space");
-  await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await card.getByRole("button", { name: "查看项目说明", exact: true }).press("Enter");
+  await expect(page.locator(".project-card")).toHaveCount(0);
+  await expect(page.locator(".project-detail .markdown-body")).toContainText("已补充运行方法");
+  await page.getByRole("button", { name: "返回作品列表", exact: true }).click();
+  await expect(card).toBeVisible();
   await expect(card.locator(".markdown-body")).toHaveCount(0);
   await row.getByRole("button", { name: "取消发布" }).click();
   await admin.getByRole("dialog").getByRole("button", { name: /^(OK|确定)$/ }).click();

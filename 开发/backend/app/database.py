@@ -5,7 +5,11 @@ from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.services.lesson_content import with_legacy_cards
+from app.services.lesson_content import (
+    deduplicate_teaching_cards,
+    deduplicate_teaching_content,
+    with_legacy_cards,
+)
 
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 engine = create_async_engine(settings.database_url, future=True)
@@ -39,27 +43,26 @@ async def init_database() -> None:
     # server startup never blocks the event loop.
     await asyncio.to_thread(migrate_database)
     async with engine.begin() as connection:
-        legacy_lessons = (
+        lessons = (
             await connection.execute(
                 text(
-                    "SELECT id, body_markdown, objective, practice, completion_criteria "
-                    "FROM lessons WHERE objective != '' OR practice != '' OR completion_criteria != ''"
+                    "SELECT id, body_markdown, content_json, objective, practice, completion_criteria "
+                    "FROM lessons"
                 )
             )
         ).mappings().all()
-        for lesson in legacy_lessons:
-            body = with_legacy_cards(
-                lesson["body_markdown"],
-                lesson["objective"],
-                lesson["practice"],
-                lesson["completion_criteria"],
-            )
+        for lesson in lessons:
+            legacy_fields = [lesson[key] for key in ("objective", "practice", "completion_criteria")]
+            body = with_legacy_cards(lesson["body_markdown"], *legacy_fields) if any(legacy_fields) else deduplicate_teaching_cards(lesson["body_markdown"])
+            content_json = deduplicate_teaching_content(lesson["content_json"])
+            if body == lesson["body_markdown"] and content_json == lesson["content_json"] and not any(legacy_fields):
+                continue
             await connection.execute(
                 text(
-                    "UPDATE lessons SET body_markdown=:body, objective='', practice='', "
+                    "UPDATE lessons SET body_markdown=:body, content_json=:content_json, objective='', practice='', "
                     "completion_criteria='' WHERE id=:id"
                 ),
-                {"body": body, "id": lesson["id"]},
+                {"body": body, "content_json": content_json, "id": lesson["id"]},
             )
 
 

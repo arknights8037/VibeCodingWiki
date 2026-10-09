@@ -5,7 +5,7 @@ import json
 from contextlib import asynccontextmanager
 from io import BytesIO
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -71,6 +71,35 @@ async def healthz(session: AsyncSession = Depends(get_session)) -> dict[str, str
 
 
 api_prefix = "/api/v1"
+
+
+@app.get(api_prefix, tags=["endpoint"])
+async def endpoint_manifest(request: Request) -> dict:
+    """Describe exposed libraries so clients do not need to guess URL suffixes."""
+    origin = str(request.base_url).rstrip("/")
+    return {
+        "protocol": "knowledge-endpoint",
+        "version": "1",
+        "name": settings.app_name,
+        "capabilities": {"read": True, "search": True, "write": False, "mcp": True},
+        "libraries": [
+            {
+                "id": "wiki",
+                "title": "知识库",
+                "kind": "wiki",
+                "links": {"list": f"{origin}{api_prefix}/wiki", "item": f"{origin}{api_prefix}/wiki/{{slug}}"},
+            },
+            {
+                "id": "courses",
+                "title": "课程",
+                "kind": "course",
+                "links": {"list": f"{origin}{api_prefix}/courses", "item": f"{origin}{api_prefix}/courses/{{slug}}"},
+            },
+        ],
+        "links": {"mcp": f"{origin}/mcp"},
+    }
+
+
 for router in (
     auth.router,
     courses.router,

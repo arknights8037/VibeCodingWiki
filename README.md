@@ -4,12 +4,12 @@ VibeCodingWiki 是面向零基础学习者的中文 Vibe Coding 知识平台。�
 
 ## 首版能力
 
-- 5 个递进课程模块、15 篇完整课文；每篇都包含场景导入、核心概念、跟做任务和课后检查。
+- 9 个递进课程模块、27 篇完整课文，覆盖基础、进阶、专业三个阶段；每篇都包含场景导入、核心概念、跟做任务和课后检查。
 - 5 个预置 Wiki 词条，支持中文全文检索、精确短语、分类、标签、难度、更新时间、分页与相关度排序。
 - `user` 投稿，`reviewer` / `admin` 审核、驳回、发布、取消发布和置顶；审核历史不可覆盖。
-- 公开 MCP 提供 6 个只读工具与对应资源，仅暴露已发布内容；管理员可通过独立的凭证端点更新 Wiki 内容。
+- 公开 MCP 提供 7 个只读工具与对应资源，仅暴露已发布内容；管理员可通过独立的凭证端点调用受后台开关控制的写入工具。
 - Agent Skills ZIP 校验、稳定下载地址、原始 `SKILL.md` 与 SHA-256。
-- Vue 3 管理后台，覆盖审核、用户角色、Wiki、Skills、MCP、OAuth 凭据与审计日志。
+- Vue 3 管理后台，覆盖审核、用户角色、Wiki、Skills、MCP、OAuth 凭据、OpenAI 兼容 AI API 与审计日志；配置完成后块编辑器提供浮动 AI 助手和块内 AI 编辑。
 - 统一文档站账户中心：个人资料、文件头像、账号安全、MCP 凭据、我的项目和通知。
 - GitHub/Gitee 官方 OAuth 绑定；管理员可在后台配置 OAuth Client ID/Secret。
 
@@ -77,7 +77,7 @@ npm run test:e2e
 npm run test:integration
 ```
 
-课程正文保存在 `开发/backend/app/course_content.py`，按五个公开模块、每模块三篇课文组织；每篇统一采用“场景导入—核心概念—跟做任务—课后检查”的叙事结构，并在正文末尾生成学习目标、实践任务和完成标准卡片。首次改版会自动用于全新数据库；已有开发库请先备份，再运行：
+课程正文保存在 `开发/backend/app/course_content.py`，按基础、进阶、专业三个阶段的九个公开模块、每模块三篇课文组织；内容同时面向零基础学习者、计算机专业学生和工程师。每篇统一采用“场景导入—核心概念—跟做任务—课后检查”的叙事结构，并在正文末尾生成学习目标、实践任务和完成标准卡片。首次改版会自动用于全新数据库；已有开发库请先备份，再运行：
 
 ```powershell
 cd 开发/backend
@@ -101,9 +101,11 @@ cd 开发/backend
 
 ## MCP 与 Skills
 
-MCP 目标规范为 `2026-07-28`。公开工具：`search_wiki`、`get_wiki_article`、`list_courses`、`get_lesson`、`list_projects`、`list_skills`。服务不会返回草稿、投稿人资料或后台数据。
+MCP 目标规范为 `2026-07-28`。公开工具：`search_wiki`、`get_wiki_article`、`list_wiki_categories`、`list_courses`、`get_lesson`、`list_projects`、`list_skills`。服务不会返回草稿、投稿人资料或后台数据。
 
 管理员可在后台的“MCP 管理”中生成全局令牌，或在管理员账户的安全设置中生成个人 MCP 凭据；将 `Authorization: Bearer <令牌>` 加到管理员端点的请求头，即可发现并调用 `update_wiki_article`、`update_lesson` 和 `update_course`。该端点始终要求管理员令牌，更新会记录为 `wiki.update.mcp` 审计事件；令牌只保存 SHA-256 摘要，不会在接口响应中回显。公开 MCP 的“开启令牌鉴权”开关只影响 `/mcp`，管理员写入端点不会因该开关关闭而失去保护。
+
+管理员 MCP 也支持知识库维护：`create_wiki_article`、`delete_wiki_article`、`move_wiki_article`，以及知识库分类的 `create_wiki_category`、`update_wiki_category`、`delete_wiki_category`。这些操作都要求同一管理员 Bearer 凭证，并分别写入 MCP 审计事件；删除分类会同时删除其子分类和词条。
 
 Skills 的稳定地址形式：
 

@@ -17,7 +17,7 @@ const controlPopperClass = computed(() => `wiki-control-popper${resolvedTheme.va
 const systemMedia = window.matchMedia('(prefers-color-scheme: dark)');
 const syncSystemTheme = (event: MediaQueryListEvent) => { systemDark.value = event.matches; };
 const levels = computed(() => [ {value:'all', label:t('全部等级','All levels')}, {value:'beginner', label:t('基础','Beginner')}, {value:'intermediate', label:t('进阶','Intermediate')}, {value:'advanced', label:t('专业','Advanced')} ]);
-const pages = computed(() => [{ path:'/', zh:'课程', en:'Courses' }, {path:'/wiki', zh:'知识库', en:'Wiki'}, {path:'/projects', zh:'作品', en:'Projects'}, {path:'/skills', zh:'工具', en:'Tools'}]);
+const pages = computed(() => [{ path:'/', zh:'课程', en:'Courses' }, {path:'/wiki', zh:'知识库', en:'Wiki'}, {path:'/projects', zh:'作品', en:'Projects'}, {path:'/skills', zh:'技能', en:'Skills'}, {path:'/tools', zh:'工具', en:'Tools'}]);
 function isPageActive(path: string) { return path === '/' ? route.path === '/' || route.path.startsWith('/courses') : route.path.startsWith(path); }
 const route = useRoute();
 const router = useRouter();
@@ -44,7 +44,7 @@ async function logout() {
   try { await auth.logout(); await router.replace('/'); }
   catch (error) { logoutError.value = apiError(error); }
 }
-function search() { const path = route.path.startsWith('/wiki') ? '/wiki' : route.path.startsWith('/projects') ? '/projects' : route.path.startsWith('/skills') ? '/skills' : '/'; void router.push({ path, query: query.value ? { q: query.value } : {} }); menuOpen.value = false; }
+function search() { const path = route.path.startsWith('/wiki') ? '/wiki' : route.path.startsWith('/projects') ? '/projects' : route.path.startsWith('/skills') ? '/skills' : route.path.startsWith('/tools') ? '/tools' : '/'; void router.push({ path, query: query.value ? { q: query.value } : {} }); menuOpen.value = false; }
 watch(() => [route.path, route.query.q], () => { query.value = String(route.query.q || ''); });
 watch(() => route.fullPath, () => { menuOpen.value = false; });
 watch(() => route.path, async () => { activeHeading.value = ''; if (!route.hash) window.scrollTo(0, 0); await nextTick(); updateOutline(); });
@@ -73,7 +73,7 @@ onBeforeUnmount(() => { systemMedia.removeEventListener("change", syncSystemThem
     </header>
     <aside class="docs-sidebar" :class="{ open: menuOpen }" aria-label="学习目录">
       <div class="sidebar-controls"><label v-if="route.path === '/' || route.path.startsWith('/courses')" class="level-label" for="course-level">{{ t('学习等级', 'Learning level') }}</label><el-select :popper-class="controlPopperClass" class="level-select" v-if="route.path === '/' || route.path.startsWith('/courses')" id="course-level" v-model="prefs.level" aria-label="学习等级"><el-option v-for="level in levels" :key="level.value" :value="level.value" :label="level.label" /></el-select>
-      <div v-if="auth.signedIn && (route.path === '/projects' || route.path === '/skills')" class="sidebar-submit-links"><RouterLink v-if="route.path === '/projects'" to="/projects/submit">＋ 新建作品投稿</RouterLink><RouterLink v-else :to="{ path: '/skills', query: { create: '1' } }">＋ 新建工具投稿</RouterLink></div><form class="docs-search" @submit.prevent="search"><el-input v-model="query" :aria-label="route.path.startsWith('/wiki') ? '搜索知识库' : route.path.startsWith('/projects') ? '搜索作品' : route.path.startsWith('/skills') ? '搜索工具' : '搜索课程'" :placeholder="route.path.startsWith('/wiki') ? '搜索知识库…' : route.path.startsWith('/projects') ? '搜索作品…' : route.path.startsWith('/skills') ? '搜索工具…' : '搜索课程…'" /><el-button native-type="submit" aria-label="搜索当前页面">⌕</el-button></form></div>
+      <div v-if="auth.signedIn && route.path === '/skills'" class="sidebar-submit-links"><RouterLink to="/skills/create">＋ 创建 Skill 资源</RouterLink></div><form class="docs-search" @submit.prevent="search"><el-input v-model="query" :aria-label="route.path.startsWith('/wiki') ? '搜索知识库' : route.path.startsWith('/projects') ? '搜索作品' : route.path.startsWith('/skills') ? '搜索技能' : route.path.startsWith('/tools') ? '搜索工具' : '搜索课程'" :placeholder="route.path.startsWith('/wiki') ? '搜索知识库…' : route.path.startsWith('/projects') ? '搜索作品…' : route.path.startsWith('/skills') ? '搜索技能…' : route.path.startsWith('/tools') ? '搜索工具…' : '搜索课程…'" /><el-button native-type="submit" aria-label="搜索当前页面">⌕</el-button></form></div>
       <DocsDirectory />
       <div v-if="auth.canReview" class="sidebar-workspace"><RouterLink to="/admin" custom v-slot="{ navigate, href }"><el-button tag="a" :href="href" text @click="navigate">⚙ {{ t('后台管理','Administration') }}</el-button></RouterLink></div>
       <div class="sidebar-settings"><el-button text @click="settingsOpen = true">⚙ {{ t('设置','Settings') }}</el-button><span>VibeCoding Wiki</span></div>

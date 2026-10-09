@@ -94,6 +94,7 @@ export interface Skill {
   slug: string;
   name: string;
   summary: string;
+  tags?: string[];
   version: string;
   license_name?: string | null;
   compatibility?: string | null;

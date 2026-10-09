@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Refresh, SwitchButton, Menu, Check, Close, Download, Star, Delete, Upload, Lock, UserFilled, ArrowDown, Edit } from "@element-plus/icons-vue";
+import { Refresh, SwitchButton, Menu, Check, Close, Download, Star, Delete, Upload, Lock, UserFilled, ArrowDown, ArrowLeft, Edit, Plus } from "@element-plus/icons-vue";
 import CourseEditor from "@/components/CourseEditor.vue";
 import ContentDisclosure from "@/components/ContentDisclosure.vue";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog.vue";
@@ -9,13 +9,14 @@ import WikiEditor from "@/components/WikiEditor.vue";
 import SkillPublisher from "@/components/SkillPublisher.vue";
 import ContentCategoryManager from "@/components/ContentCategoryManager.vue";
 import AdminListTable from "@/components/AdminListTable.vue";
+import MarkdownEditor from "@/components/MarkdownEditor.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { confirmRemoval } from "@/services/removal";
 import { api, apiError } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { Project, Role, User, Skill } from "@/types";
 
-type Tab = "courses" | "reviews" | "users" | "wiki" | "content_categories" | "skills" | "mcp" | "audit";
+type Tab = "courses" | "reviews" | "users" | "wiki" | "content_categories" | "skills" | "mcp" | "oauth" | "audit";
 type Audit = {
   id: number;
   action: string;
@@ -29,12 +30,13 @@ type Audit = {
 };
 const allTabs: { id: Tab; label: string }[] = [
   { id: "courses", label: "课程编辑" },
-  { id: "reviews", label: "审核" },
-  { id: "users", label: "用户" },
   { id: "wiki", label: "Wiki 编辑" },
   { id: "content_categories", label: "作品/工具分区" },
   { id: "skills", label: "Skills" },
+  { id: "reviews", label: "审核" },
   { id: "mcp", label: "MCP 管理" },
+  { id: "users", label: "用户" },
+  { id: "oauth", label: "第三方绑定" },
   { id: "audit", label: "审计" },
 ];
 const auth = useAuthStore();
@@ -49,16 +51,30 @@ const wikiEditor = ref<InstanceType<typeof WikiEditor>>();
 const courseEditor = ref<InstanceType<typeof CourseEditor>>();
 
 const tab = computed<Tab>(() => tabs.value.find(item => item.id === route.query.section)?.id || "reviews");
-const currentTitle = computed(() => ({ courses: "课程编辑", reviews: "项目审核", users: "用户与权限", wiki: "知识库内容", content_categories: "作品/工具分区", skills: "Skills 资源", mcp: "MCP 管理", audit: "操作审计" })[tab.value]);
-const count = computed(() => ({ courses: 0, reviews: pending.value.length, users: users.value.length, wiki: 0, content_categories: 0, skills: skills.value.length, mcp: mcpTools.value.length, audit: audits.value.length })[tab.value]);
+const skillCreateMode = computed(() => tab.value === "skills" && route.query.mode === "create");
+const currentTitle = computed(() => ({ courses: "课程编辑", reviews: "项目审核", users: "用户与权限", wiki: "知识库内容", content_categories: "作品/工具分区", skills: "Skills 资源", mcp: "MCP 管理", oauth: "第三方绑定", audit: "操作审计" })[tab.value]);
+const count = computed(() => ({ courses: 0, reviews: pending.value.length, users: users.value.length, wiki: 0, content_categories: 0, skills: skills.value.length, mcp: mcpTools.value.length, oauth: 0, audit: audits.value.length })[tab.value]);
 const matches = (value: string) => value.toLowerCase().includes(search.value.trim().toLowerCase());
 const filteredProjects = computed(() => pending.value.filter(x => matches(x.name + x.summary)));
 const filteredUsers = computed(() => users.value.filter(x => matches(x.display_name + x.email)));
 const skillFilter = ref("all");
 const skillStatusNames: Record<string, string> = { draft: "草稿", pending_review: "待审核", published: "已发布", rejected: "已驳回", archived: "已归档" };
 const skillReview = ref<{ id: number; skill_md: string; files: string[] } | null>(null);
+const skillContent = ref<{ id: number; name: string; body_markdown: string } | null>(null);
 const filteredSkills = computed(() => skills.value.filter(x => matches(x.name + x.version + x.summary) && (skillFilter.value === "all" || x.status === skillFilter.value)));
 async function inspectSkill(id: number) { skillReview.value = { id, ...(await api.get(`/admin/skills/${id}/review`)).data }; }
+async function editSkillContent(id: number, name: string) {
+  const review = (await api.get(`/admin/skills/${id}/review`)).data as { body_markdown?: string; skill_md: string };
+  const body = review.body_markdown ?? review.skill_md.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "");
+  skillContent.value = { id, name, body_markdown: body.trim() };
+}
+async function saveSkillContent() {
+  if (!skillContent.value) return;
+  await api.patch(`/admin/skills/${skillContent.value.id}/content`, { body_markdown: skillContent.value.body_markdown });
+  ElMessage.success("Skill 说明内容已更新");
+  skillContent.value = null;
+  await loadAll();
+}
 async function rejectSkill(id: number) {
   const answer = await ElMessageBox.prompt("请说明需要修改的内容，作者可以查看此意见后重新提交", "驳回 Skill", {
     inputType: "textarea", confirmButtonText: "驳回", cancelButtonText: "取消",
@@ -68,11 +84,21 @@ async function rejectSkill(id: number) {
   await loadAll();
 }
 const filteredAudits = computed(() => audits.value.filter(x => matches(x.action + x.target_type + x.target_id)));
-const auditActionNames: Record<string, string> = { 'user.status.update':'账号状态修改', 'user.role.update':'角色修改', 'auth.password.change':'修改密码', 'wiki.create':'创建词条', 'wiki.update':'修改词条', 'wiki.update.mcp':'MCP 修改词条', 'wiki.move':'调整词条顺序', 'wiki.category.create':'创建分类', 'wiki.category.update':'修改分类', 'wiki.category.move':'调整分类顺序', 'wiki.category.delete':'删除分类', 'wiki.delete':'删除词条', 'skill.upload':'上传 Skill', 'skill.intro.update':'修改 Skill 发布简介', 'skill.status.update':'修改 Skill 状态', 'mcp.settings.update':'修改 MCP 鉴权设置', 'mcp.tool.update':'修改 MCP 工具', 'course.save':'保存课程', 'course.update.mcp':'MCP 修改课程', 'lesson.status.update':'修改课文状态', 'lesson.update.mcp':'MCP 修改课文', 'project.approve':'发布投稿', 'project.reject':'驳回投稿', 'project.unpublish':'撤下投稿', 'project.featured.update':'修改推荐状态' };
+const auditActionNames: Record<string, string> = { 'user.status.update':'账号状态修改', 'user.role.update':'角色修改', 'auth.password.change':'修改密码', 'wiki.create':'创建词条', 'wiki.update':'修改词条', 'wiki.update.mcp':'MCP 修改词条', 'wiki.move':'调整词条顺序', 'wiki.category.create':'创建分类', 'wiki.category.update':'修改分类', 'wiki.category.move':'调整分类顺序', 'wiki.category.delete':'删除分类', 'wiki.delete':'删除词条', 'skill.upload':'上传 Skill', 'skill.intro.update':'修改 Skill 发布简介', 'skill.content.update':'修改 Skill 说明内容', 'skill.status.update':'修改 Skill 状态', 'mcp.settings.update':'修改 MCP 鉴权设置', 'mcp.tool.update':'修改 MCP 工具', 'course.save':'保存课程', 'course.update.mcp':'MCP 修改课程', 'lesson.status.update':'修改课文状态', 'lesson.update.mcp':'MCP 修改课文', 'project.approve':'发布投稿', 'project.reject':'驳回投稿', 'project.unpublish':'撤下投稿', 'project.featured.update':'修改推荐状态' };
 const auditTargetNames: Record<string, string> = { user:'用户', wiki:'词条', wiki_category:'知识库分类', skill:'Skill', course:'课程', lesson:'课文', project:'投稿项目', projects:'投稿项目' };
 async function selectTab(id: Tab) {
   await router.push({ path: '/admin', query: { section: id } });
   mobileMenu.value = false;
+}
+async function openSkillCreate() {
+  await router.push({ path: '/admin', query: { section: 'skills', mode: 'create' } });
+}
+async function closeSkillCreate() {
+  await router.push({ path: '/admin', query: { section: 'skills' } });
+}
+async function skillCreated() {
+  await closeSkillCreate();
+  await loadAll();
 }
 async function logout() { if (tab.value === 'wiki' && !await wikiEditor.value?.canLeave()) return; await perform(async () => { await auth.logout(); await router.replace('/'); }); }
 watch(tab, () => { search.value = ''; });
@@ -85,11 +111,26 @@ const loading = ref(false);
 const busy = ref(false);
 const reviewStatus = ref("pending_review");
 const skills = ref<(Skill & { id: number; status: string })[]>([]);
-const mcpTools = ref<{ id: number; name: string; description: string; enabled: boolean }[]>([]);
-const mcpSettings = ref({ enabled: true, auth_enabled: false, has_token: false });
-const oauthSettings = ref({ github_client_id: '', github_configured: false, gitee_client_id: '', gitee_configured: false });
+type McpTool = { id: number; name: string; description: string; enabled: boolean; scope: "public" | "admin"; endpoint: string };
+type McpResource = { uri: string; description: string; scope: "public" | "admin"; endpoint: string };
+const mcpTools = ref<McpTool[]>([]);
+type McpSettings = { enabled: boolean; auth_enabled: boolean; has_token: boolean; public_endpoint: string; admin_endpoint: string; resources: McpResource[] };
+const mcpSettings = ref<McpSettings>({ enabled: true, auth_enabled: false, has_token: false, public_endpoint: "/mcp", admin_endpoint: "/mcp/admin", resources: [] });
+const oauthSettings = ref({ github_client_id: '', github_configured: false, gitee_client_id: '', gitee_configured: false, ai_base_url: '', ai_model: '', ai_configured: false, ai_api_key_configured: false });
 const oauthSecrets = ref({ github_client_secret: '', gitee_client_secret: '' });
+const oauthSecretEditing = ref({ github: false, gitee: false });
+const aiApiKey = ref('');
 const oauthCallbackBase = window.location.origin;
+const mcpEndpointUrl = (path: string) => `${window.location.origin}${path}`;
+function applyMcpSettings(value: Partial<McpSettings>) {
+  mcpSettings.value = {
+    ...mcpSettings.value,
+    ...value,
+    public_endpoint: value.public_endpoint || mcpSettings.value.public_endpoint || "/mcp",
+    admin_endpoint: value.admin_endpoint || mcpSettings.value.admin_endpoint || "/mcp/admin",
+    resources: Array.isArray(value.resources) ? value.resources : mcpSettings.value.resources,
+  };
+}
 
 
 async function perform(action: () => Promise<void>) {
@@ -147,7 +188,7 @@ async function loadAll() {
       users.value = userResponse.data;
       audits.value = auditResponse.data;
       skills.value = skillResponse.data;
-      mcpSettings.value = mcpResponse.data;
+      applyMcpSettings(mcpResponse.data);
       mcpTools.value = mcpToolResponse.data;
       oauthSettings.value = oauthResponse.data;
     }
@@ -196,23 +237,31 @@ async function editSkillIntro(item: Skill & { id: number; status: string }) {
 }
 async function toggleMcpSetting(key: "enabled" | "auth_enabled", value: boolean) {
   const response = await api.patch("/admin/mcp/settings", { [key]: value });
-  mcpSettings.value = response.data;
+  applyMcpSettings(response.data);
   ElMessage.success("MCP 设置已保存");
 }
 async function rotateMcpToken() {
   const token = `${crypto.randomUUID().replaceAll("-", "")} ${crypto.randomUUID().replaceAll("-", "")}`;
-  await api.patch("/admin/mcp/settings", { token: token.replace(" ", "") });
-  mcpSettings.value = { ...mcpSettings.value, has_token: true };
+  const response = await api.patch("/admin/mcp/settings", { token: token.replace(" ", "") });
+  applyMcpSettings({ ...response.data, has_token: true });
   ElMessage.success(`新令牌：${token.replace(" ", "")}`);
 }
 async function saveOAuthSettings() {
-  const response = await api.patch('/admin/oauth/settings', { ...oauthSettings.value, ...oauthSecrets.value });
+  const response = await api.patch('/admin/oauth/settings', { ...oauthSettings.value, ...oauthSecrets.value, ai_api_key: aiApiKey.value || undefined });
   oauthSettings.value = response.data; oauthSecrets.value = { github_client_secret: '', gitee_client_secret: '' };
-  ElMessage.success('GitHub / Gitee OAuth 配置已保存');
+  oauthSecretEditing.value = { github: false, gitee: false };
+  aiApiKey.value = '';
+  ElMessage.success('第三方绑定与 AI API 配置已保存');
 }
-async function toggleMcpTool(tool: { id: number; enabled: boolean }) {
-  const response = await api.patch(`/admin/mcp/tools/${tool.id}`, { enabled: !tool.enabled });
-  tool.enabled = response.data.enabled;
+async function toggleMcpTool(tool: McpTool, enabled: boolean) {
+  try {
+    const response = await api.patch(`/admin/mcp/tools/${tool.id}`, { enabled });
+    tool.enabled = response.data.enabled;
+    ElMessage.success(`${tool.name} 已${tool.enabled ? "启用" : "停用"}`);
+  } catch (reason) {
+    tool.enabled = !enabled;
+    throw reason;
+  }
 }
 function updateRoleValue(user: User, value: string | number | boolean | undefined) {
   void perform(() => updateRole(user, value as Role));
@@ -228,8 +277,8 @@ onMounted(loadAll);
       <div class="sidebar-caption">工作空间</div>
       <nav class="flex flex-col gap-1" aria-label="管理模块">
         <button v-for="item in tabs" :key="item.id" :aria-label="item.label" :aria-current="tab === item.id ? 'page' : undefined" class="sidebar-link" :class="{ selected: tab === item.id }" @click="selectTab(item.id)">
-          <span aria-hidden="true" class="nav-symbol">{{ { courses: '▤', reviews: '☷', users: '♙', wiki: '▤', content_categories: '▦', skills: '◇', mcp: '⌘', audit: '◷' }[item.id] }}</span>
-          {{ { courses: '课程编辑', reviews: '项目审核', users: '用户与权限', wiki: '知识库内容', content_categories: '作品/工具分区', skills: 'Skills 资源', mcp: 'MCP 管理', audit: '操作审计' }[item.id] }}
+          <span aria-hidden="true" class="nav-symbol">{{ { courses: '▤', reviews: '☷', users: '♙', wiki: '▤', content_categories: '▦', skills: '◇', mcp: '⌘', oauth: '⇄', audit: '◷' }[item.id] }}</span>
+          {{ { courses: '课程编辑', reviews: '项目审核', users: '用户与权限', wiki: '知识库内容', content_categories: '作品/工具分区', skills: 'Skills 资源', mcp: 'MCP 管理', oauth: '第三方绑定', audit: '操作审计' }[item.id] }}
         </button>
         <button v-if="auth.isAdmin" class="sidebar-link" aria-label="修改密码" @click="passwordDialog = true"><el-icon class="nav-symbol"><Lock /></el-icon>修改密码</button>
       </nav>
@@ -250,7 +299,7 @@ onMounted(loadAll);
         <el-alert v-if="error" :title="error" type="error" show-icon :closable="false"><el-button :icon="Refresh" @click="loadAll">重试加载</el-button></el-alert>
         <p v-if="loading" role="status">正在加载后台数据…</p>
         <CourseEditor v-if="tab === 'courses'" ref="courseEditor" />
-        <div v-if="tab !== 'courses' && tab !== 'wiki' && tab !== 'content_categories'" id="records" class="records-toolbar flex items-center justify-between gap-4"><div class="document-meta"><span>{{ count }} 条记录</span></div><el-input v-model="search" aria-label="搜索当前列表" placeholder="搜索当前列表…" clearable class="record-search" /></div>
+        <div v-if="tab !== 'courses' && tab !== 'wiki' && tab !== 'content_categories' && tab !== 'oauth'" id="records" class="records-toolbar flex items-center justify-between gap-4"><div class="document-meta"><span>{{ count }} 条记录</span></div><el-input v-model="search" aria-label="搜索当前列表" placeholder="搜索当前列表…" clearable class="record-search" /></div>
         <fieldset v-if="tab !== 'courses'" :disabled="busy || loading" class="admin-controls">
     <section v-if="tab === 'reviews'">
       <label>投稿状态 <select v-model="reviewStatus" @change="loadAll">
@@ -272,18 +321,41 @@ onMounted(loadAll);
         <WikiEditor v-else-if="tab === 'wiki'" ref="wikiEditor" />
         <ContentCategoryManager v-else-if="tab === 'content_categories'" />
     <section v-else-if="tab === 'skills'" class="form-panel">
-      <SkillPublisher @saved="loadAll" />
+      <template v-if="skillCreateMode">
+        <div class="skill-create-toolbar"><el-button text :icon="ArrowLeft" @click="closeSkillCreate">返回 Skills 列表</el-button></div>
+        <div class="admin-skill-create-heading"><h2>创建 Skill 资源</h2><p class="muted">上传已有 Skill 包，或在线编写新的资源。保存后返回列表继续审核和发布。</p></div>
+        <SkillPublisher @saved="skillCreated" />
+      </template>
+      <template v-else>
+        <div class="skill-list-toolbar"><div><h2>Skills 资源</h2><span class="muted">管理上传版本、说明和发布状态</span></div><el-button type="primary" :icon="Plus" @click="openSkillCreate">创建 Skill 资源</el-button></div>
       <el-radio-group v-model="skillFilter" style="margin: 20px 0"><el-radio-button value="all">全部</el-radio-button><el-radio-button value="pending_review">待审核</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button><el-radio-button value="published">已发布</el-radio-button></el-radio-group>
       <el-dialog :model-value="!!skillReview" title="审核 Skill 内容" width="min(800px, 95vw)" @close="skillReview = null">
         <template v-if="skillReview"><pre style="white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto">{{ skillReview.skill_md }}</pre><p>附属文件：{{ skillReview.files.join('、') || '无' }}</p><a :href="`/api/v1/admin/skills/${skillReview.id}/download.zip`">下载完整包检查</a></template>
       </el-dialog>
-      <AdminListTable :data="filteredSkills" empty-text="暂无 Skills"><el-table-column label="Skill / 版本" min-width="260"><template #default="{ row }"><strong>{{ row.name }} / {{ row.version }}</strong><small class="audit-raw">{{ row.summary || '尚未填写发布简介' }}</small></template></el-table-column><el-table-column label="状态" width="120"><template #default="{ row }"><el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small" effect="light">{{ skillStatusNames[row.status] || row.status }}</el-tag></template></el-table-column><el-table-column label="操作" min-width="280"><template #default="{ row }"><div class="admin-row-actions"><el-button @click="perform(() => inspectSkill(row.id))">查看内容</el-button><el-button v-if="row.status === 'pending_review'" type="danger" plain @click="perform(() => rejectSkill(row.id))">驳回</el-button><el-button :icon="Edit" @click="perform(() => editSkillIntro(row))">编辑简介</el-button><el-button :icon="Upload" @click="perform(() => toggleSkill(row))">{{ row.status === 'published' ? '下架' : row.status === 'pending_review' ? '通过并发布' : '发布' }}</el-button><el-button :icon="Delete" type="danger" plain @click="removeItem('skills', row.id, `${row.name} / ${row.version}`)">移除</el-button></div></template></el-table-column></AdminListTable>
+      <el-dialog :model-value="!!skillContent" :title="`编辑 ${skillContent?.name || 'Skill'} 说明`" width="min(1000px, 95vw)" class="skill-content-dialog" destroy-on-close @close="skillContent = null">
+        <MarkdownEditor v-if="skillContent" v-model="skillContent.body_markdown" label="Skill 说明编辑器" height="min(62vh, 620px)" />
+        <template #footer><el-button @click="skillContent = null">取消</el-button><el-button type="primary" :loading="busy" @click="perform(saveSkillContent)">保存说明</el-button></template>
+      </el-dialog>
+      <AdminListTable :data="filteredSkills" empty-text="暂无 Skills"><el-table-column label="Skill / 版本" min-width="260"><template #default="{ row }"><strong>{{ row.name }} / {{ row.version }}</strong><small class="audit-raw">{{ row.summary || '尚未填写发布简介' }}</small></template></el-table-column><el-table-column label="状态" width="120"><template #default="{ row }"><el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small" effect="light">{{ skillStatusNames[row.status] || row.status }}</el-tag></template></el-table-column><el-table-column label="操作" min-width="340"><template #default="{ row }"><div class="admin-row-actions"><el-button @click="perform(() => inspectSkill(row.id))">查看内容</el-button><el-button :icon="Edit" @click="perform(() => editSkillContent(row.id, row.name))">编辑说明</el-button><el-button v-if="row.status === 'pending_review'" type="danger" plain @click="perform(() => rejectSkill(row.id))">驳回</el-button><el-button @click="perform(() => editSkillIntro(row))">编辑简介</el-button><el-button :icon="Upload" @click="perform(() => toggleSkill(row))">{{ row.status === 'published' ? '下架' : row.status === 'pending_review' ? '通过并发布' : '发布' }}</el-button><el-button :icon="Delete" type="danger" plain @click="removeItem('skills', row.id, `${row.name} / ${row.version}`)">移除</el-button></div></template></el-table-column></AdminListTable>
+      </template>
+    </section>
+    <section v-else-if="tab === 'oauth'" class="form-panel">
+      <div class="oauth-config"><div class="section-actions"><h2>第三方账号绑定</h2><span class="muted">分别配置 OAuth 应用，用户可从个人页绑定对应账号；AI API 用于编辑器中的智能助手。</span></div><div class="oauth-provider-grid">
+        <article class="oauth-provider-card"><div class="oauth-provider-heading"><div><h3>GitHub</h3><p class="muted">GitHub OAuth 应用</p></div><el-tag :type="oauthSettings.github_configured ? 'success' : 'info'">{{ oauthSettings.github_configured ? '已绑定' : '未配置' }}</el-tag></div><label>Client ID<input v-model="oauthSettings.github_client_id" placeholder="输入 Client ID" /></label><div class="oauth-secret-row"><template v-if="oauthSettings.github_configured && !oauthSecretEditing.github"><span class="oauth-secret-state">密钥已设置</span><el-button text @click="oauthSecretEditing.github = true">修改密钥</el-button></template><label v-else>Client Secret<input v-model="oauthSecrets.github_client_secret" type="password" placeholder="输入 Client Secret" /></label></div></article>
+        <article class="oauth-provider-card"><div class="oauth-provider-heading"><div><h3>Gitee</h3><p class="muted">Gitee OAuth 应用</p></div><el-tag :type="oauthSettings.gitee_configured ? 'success' : 'info'">{{ oauthSettings.gitee_configured ? '已绑定' : '未配置' }}</el-tag></div><label>Client ID<input v-model="oauthSettings.gitee_client_id" placeholder="输入 Client ID" /></label><div class="oauth-secret-row"><template v-if="oauthSettings.gitee_configured && !oauthSecretEditing.gitee"><span class="oauth-secret-state">密钥已设置</span><el-button text @click="oauthSecretEditing.gitee = true">修改密钥</el-button></template><label v-else>Client Secret<input v-model="oauthSecrets.gitee_client_secret" type="password" placeholder="输入 Client Secret" /></label></div></article>
+      </div><p class="muted">回调地址：{{ `${oauthCallbackBase}/api/v1/auth/oauth/github/callback` }} 和 {{ `${oauthCallbackBase}/api/v1/auth/oauth/gitee/callback` }}</p>
+      <article class="oauth-provider-card ai-api-card"><div class="oauth-provider-heading"><div><h3>AI API</h3><p class="muted">OpenAI 兼容的 Chat Completions 服务</p></div><el-tag :type="oauthSettings.ai_configured ? 'success' : 'info'">{{ oauthSettings.ai_configured ? '已启用' : '未配置' }}</el-tag></div><label>模型服务地址<input v-model="oauthSettings.ai_base_url" placeholder="https://api.openai.com/v1 或 http://127.0.0.1:11434/v1" /></label><label>模型名称<input v-model="oauthSettings.ai_model" placeholder="例如 gpt-4o-mini 或 qwen2.5:7b" /></label><label>API Key<input v-model="aiApiKey" type="password" autocomplete="off" :placeholder="oauthSettings.ai_api_key_configured ? '已设置，留空表示保持不变' : '云端服务必填，本地模型可留空'" /></label><p class="muted">密钥仅由服务器保存并代为请求模型服务，不会写入浏览器存储。</p></article>
+      <el-button type="primary" @click="perform(saveOAuthSettings)">保存第三方与 AI 配置</el-button></div>
     </section>
     <section v-else-if="tab === 'mcp'" class="form-panel mcp-panel">
       <div class="section-actions"><h2>MCP 服务</h2><span class="muted">管理服务开关、工具暴露范围和访问鉴权</span></div>
-      <div class="mcp-settings"><label><input type="checkbox" :checked="mcpSettings.enabled" @change="toggleMcpSetting('enabled', ($event.target as HTMLInputElement).checked)" />启用 MCP 服务</label><label><input type="checkbox" :checked="mcpSettings.auth_enabled" @change="toggleMcpSetting('auth_enabled', ($event.target as HTMLInputElement).checked)" />开启令牌鉴权</label><el-button @click="perform(rotateMcpToken)">{{ mcpSettings.has_token ? '轮换鉴权令牌' : '生成鉴权令牌' }}</el-button></div>
-      <div class="oauth-config"><div class="section-actions"><h2>第三方账号绑定</h2><span class="muted">配置官方 OAuth 应用后，用户可从个人页自动绑定 GitHub / Gitee</span></div><div class="oauth-admin-grid"><label>GitHub Client ID<input v-model="oauthSettings.github_client_id" placeholder="Client ID" /></label><label>GitHub Client Secret<input v-model="oauthSecrets.github_client_secret" type="password" placeholder="留空则保持不变" /></label><label>Gitee Client ID<input v-model="oauthSettings.gitee_client_id" placeholder="Client ID" /></label><label>Gitee Client Secret<input v-model="oauthSecrets.gitee_client_secret" type="password" placeholder="留空则保持不变" /></label></div><p class="muted">回调地址：{{ `${oauthCallbackBase}/api/v1/auth/oauth/github/callback` }} 和 {{ `${oauthCallbackBase}/api/v1/auth/oauth/gitee/callback` }}</p><el-button type="primary" @click="perform(saveOAuthSettings)">保存 OAuth 配置</el-button></div>
-      <h2>MCP 工具管理</h2><AdminListTable :data="mcpTools" empty-text="暂无 MCP 工具"><el-table-column prop="name" label="工具" min-width="180" /><el-table-column prop="description" label="说明" min-width="300" /><el-table-column label="暴露状态" width="160"><template #default="{ row }"><el-switch v-model="row.enabled" @change="toggleMcpTool(row)" /><span class="ml-2">{{ row.enabled ? '已启用' : '已停用' }}</span></template></el-table-column></AdminListTable>
+      <div class="mcp-settings"><label><input type="checkbox" :checked="mcpSettings.enabled" @change="toggleMcpSetting('enabled', ($event.target as HTMLInputElement).checked)" />启用 MCP 服务</label><label><input type="checkbox" :checked="mcpSettings.auth_enabled" @change="toggleMcpSetting('auth_enabled', ($event.target as HTMLInputElement).checked)" />公开端点开启令牌鉴权</label><el-button @click="perform(rotateMcpToken)">{{ mcpSettings.has_token ? '轮换鉴权令牌' : '生成鉴权令牌' }}</el-button></div>
+      <div class="mcp-endpoint-grid">
+        <article class="mcp-endpoint-card"><div><strong>公开 MCP</strong><el-tag type="success" size="small">只读</el-tag></div><code>{{ mcpEndpointUrl(mcpSettings.public_endpoint) }}</code><p>向外部客户端提供已发布内容、搜索和公开资源。</p></article>
+        <article class="mcp-endpoint-card"><div><strong>管理员 MCP</strong><el-tag type="warning" size="small">写入</el-tag></div><code>{{ mcpEndpointUrl(mcpSettings.admin_endpoint) }}</code><p>始终要求管理员 Bearer 令牌，可维护内容和分类。</p></article>
+      </div>
+      <div class="mcp-resources"><h2>MCP 资源</h2><div v-for="resource in mcpSettings.resources" :key="resource.uri" class="mcp-resource-row"><code>{{ resource.uri }}</code><span>{{ resource.description }}</span><el-tag size="small">{{ resource.endpoint }}</el-tag></div></div>
+      <h2>MCP 工具管理</h2><AdminListTable :data="mcpTools" empty-text="暂无 MCP 工具"><el-table-column prop="name" label="工具" min-width="200" /><el-table-column prop="description" label="说明" min-width="300" /><el-table-column label="范围" width="130"><template #default="{ row }"><el-tag :type="row.scope === 'admin' ? 'warning' : 'success'" size="small">{{ row.scope === 'admin' ? '管理员写入' : '公开只读' }}</el-tag></template></el-table-column><el-table-column prop="endpoint" label="端点" width="130" /><el-table-column label="暴露状态" width="160"><template #default="{ row }"><el-switch v-model="row.enabled" @change="perform(() => toggleMcpTool(row, $event))" /><span class="ml-2">{{ row.enabled ? '已启用' : '已停用' }}</span></template></el-table-column></AdminListTable>
     </section>
     <section v-else>
       <AdminListTable :data="filteredAudits" empty-text="暂无匹配的操作记录"><el-table-column label="时间" min-width="180"><template #default="{ row }">{{ new Date(row.created_at).toLocaleString() }}</template></el-table-column><el-table-column label="操作者" min-width="160"><template #default="{ row }">{{ row.actor_name }}<small v-if="row.actor_email"> · {{ row.actor_email }}</small></template></el-table-column><el-table-column label="动作" min-width="180"><template #default="{ row }"><strong>{{ auditActionNames[row.action] || row.action }}</strong><small class="audit-raw">{{ row.action }}</small></template></el-table-column><el-table-column label="目标" min-width="220"><template #default="{ row }"><strong>{{ row.target_name || '未命名目标' }}</strong><small class="audit-raw">{{ auditTargetNames[row.target_type] || row.target_type }} #{{ row.target_id }}</small></template></el-table-column><el-table-column label="详细记录" min-width="300"><template #default="{ row }"><code>{{ JSON.stringify(row.detail) }}</code></template></el-table-column></AdminListTable>

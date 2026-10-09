@@ -1,17 +1,21 @@
 from app.course_content import COURSES
 
 
-def test_public_curriculum_has_five_modules_and_fifteen_lessons():
+def test_public_curriculum_has_nine_modules_and_twenty_seven_lessons():
     assert [item["slug"] for item in COURSES] == [
         "vibe-coding-basics",
         "requirements-breakdown",
         "prompt-and-context",
         "environment-git",
         "testing-security-review",
+        "ai-tools-and-models",
+        "software-design-with-ai",
+        "production-delivery",
+        "team-governance-and-career",
     ]
     lessons = [lesson for course in COURSES for lesson in course["lessons"]]
-    assert len(lessons) == 15
-    assert len({lesson["slug"] for lesson in lessons}) == 15
+    assert len(lessons) == 27
+    assert len({lesson["slug"] for lesson in lessons}) == 27
 
     for course in COURSES:
         assert course["title"].strip()

@@ -26,12 +26,43 @@ def skill_payload(**changes):
 
 
 @pytest.mark.asyncio
+async def test_skill_tags_and_category_persist_and_metadata_changes_require_review(client):
+    headers = await login_user(client)
+    category = (await client.get('/api/v1/content-categories?kind=skill')).json()[0]
+    item = (await client.post('/api/v1/skills', json=skill_payload(tags=[' 代码审查 ', '自动化', '代码审查'], content_category_id=category['id']), headers=headers)).json()
+    assert item['tags'] == ['代码审查', '自动化']
+    assert item['content_category']['id'] == category['id']
+    await approve(client, item['id'])
+    public = (await client.get('/api/v1/skills/my-new-skill')).json()
+    assert public['tags'] == ['代码审查', '自动化']
+    assert public['content_category']['id'] == category['id']
+    headers = await login_user(client)
+    updated = await client.patch(f"/api/v1/skills/{item['id']}/intro", json={'summary': item['summary'], 'tags': ['测试']}, headers=headers)
+    assert updated.json()['tags'] == ['测试']
+    assert updated.json()['status'] == 'pending_review'
+    assert updated.json()['sha256'] == item['sha256']
+    project_category = (await client.get('/api/v1/content-categories?kind=project')).json()[0]
+    invalid = await client.patch(f"/api/v1/skills/{item['id']}/intro", json={'summary': item['summary'], 'content_category_id': project_category['id']}, headers=headers)
+    assert invalid.status_code == 422
+    for tags in [[''], ['x' * 41], [str(index) for index in range(13)]]:
+        invalid = await client.patch(f"/api/v1/skills/{item['id']}/intro", json={'summary': item['summary'], 'tags': tags}, headers=headers)
+        assert invalid.status_code == 422
+    md = b'---\nname: tagged-upload\ndescription: uploaded skill\n---\n# Steps\n'
+    uploaded = await client.post('/api/v1/skills/upload', data={'tags': ['文件上传', '自动化'], 'content_category_id': category['id']}, files={'archive': ('SKILL.md', md)}, headers=headers)
+    assert uploaded.status_code == 201
+    assert uploaded.json()['tags'] == ['文件上传', '自动化']
+
+
+@pytest.mark.asyncio
 async def test_create_manage_and_anonymous_install(client):
     headers = await login_user(client)
     created = await client.post('/api/v1/skills', json=skill_payload(), headers=headers)
     assert created.status_code == 201, created.text
     item = created.json()
     base = '/skills/my-new-skill/1.0.0'
+    content = await client.get(f"/api/v1/skills/{item['id']}/content")
+    assert content.status_code == 200
+    assert '# 步骤' in content.text
     assert (await client.get(base + '/SKILL.md')).status_code == 404
     assert (await client.get('/api/v1/skills/mine')).json()[0]['id'] == item['id']
     assert (await client.patch(f"/api/v1/skills/{item['id']}/intro", json={'summary': '新的说明'}, headers=headers)).status_code == 200
@@ -41,6 +72,7 @@ async def test_create_manage_and_anonymous_install(client):
     assert (await client.get(base + '/download.zip')).status_code == 404
     await approve(client, item['id'])
     client.cookies.clear()
+    assert (await client.get(f"/api/v1/skills/{item['id']}/content")).status_code == 401
     response = await client.get(base + '/download.zip', headers={'Origin': 'https://external.example'})
     assert response.status_code == 200
     assert response.headers['access-control-allow-origin'] == '*'
@@ -68,6 +100,7 @@ async def test_skill_ownership_duplicates_and_validation(client):
         payload[field] = '   '
         assert (await client.post('/api/v1/skills', json=payload, headers=headers)).status_code == 422
     headers = await login_user(client, 'another-author@example.com')
+    assert (await client.get(f"/api/v1/skills/{item['id']}/content")).status_code == 404
     assert (await client.get('/api/v1/skills/mine')).json() == []
     assert (await client.patch(f"/api/v1/skills/{item['id']}/intro", json={'summary': '篡改'}, headers=headers)).status_code == 404
     assert (await client.patch(f"/api/v1/skills/{item['id']}/status", json={'status': 'published'}, headers=headers)).status_code == 404

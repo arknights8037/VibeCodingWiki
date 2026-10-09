@@ -46,10 +46,10 @@ test('top navigation replaces the directory and directory entries open the match
   await tabs.getByRole('link', { name: '工具', exact: true }).click();
   const toolsDirectory = page.getByRole('navigation', { name: '工具目录' });
   await toolsDirectory.locator('.docs-course-link').first().click();
-  await expect(page).toHaveURL(/\/skills#skill-/);
-  await expect(page.locator('.skill-card').first()).toBeInViewport();
+  await expect(page).toHaveURL(/\/skills\/[^/]+\/[^/]+$/);
+  await expect(page.locator('.skill-detail .markdown-body')).toBeVisible();
   await page.reload();
-  await expect(page.locator('.skill-card').first()).toBeInViewport();
+  await expect(page.locator('.skill-detail .markdown-body')).toBeVisible();
   await page.setViewportSize({ width: 360, height: 800 });
   await page.getByRole('button', { name: '打开学习目录' }).click();
   await expect(toolsDirectory).toBeInViewport();

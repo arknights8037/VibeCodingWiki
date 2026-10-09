@@ -1,15 +1,21 @@
 import hashlib
 import json
+import re
+import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
 from app.dependencies import require_roles, verify_csrf
+from app.mcp_catalog import MCP_RESOURCE_CATALOG, MCP_TOOL_CATALOG, MCP_TOOL_SCOPE
 from app.models import (
     AuditLog,
     Category,
@@ -44,6 +50,7 @@ from app.schemas import (
     OAuthSettingsOut,
     OAuthSettingsWrite,
     RoleUpdate,
+    SkillContentUpdate,
     SkillIntroUpdate,
     SkillOut,
     SkillReviewUpdate,
@@ -55,7 +62,7 @@ from app.schemas import (
 )
 from app.services.block_content import normalize_content_json
 from app.services.lesson_content import with_legacy_cards
-from app.services.skills import SkillValidationError, validate_skill_archive
+from app.services.skills import SkillValidationError, build_skill_archive, validate_skill_archive
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 admin_only = require_roles(Role.admin)
@@ -188,13 +195,14 @@ async def create_wiki_category(
     admin: User = Depends(admin_only),
     session: AsyncSession = Depends(get_session),
 ):
+    slug = payload.slug or f"category-{uuid.uuid4().hex[:12]}"
     if await session.scalar(
-        select(Category.id).where((Category.slug == payload.slug) | (Category.name == payload.name))
+        select(Category.id).where((Category.slug == slug) | (Category.name == payload.name))
     ):
         raise HTTPException(409, "分类标识或名称已存在")
     if payload.parent_id and not await session.get(Category, payload.parent_id):
         raise HTTPException(404, "父级分类不存在")
-    category = Category(**payload.model_dump())
+    category = Category(**payload.model_dump(exclude={"slug"}), slug=slug)
     session.add(category)
     await session.flush()
     await write_audit(
@@ -250,16 +258,17 @@ async def update_wiki_category(
             pending.append(child_id)
     if payload.parent_id in descendants:
         raise HTTPException(422, "父级分类不能设置为当前分类的子分类")
+    slug = payload.slug or category.slug
     duplicate = await session.scalar(
         select(Category.id).where(
-            ((Category.slug == payload.slug) | (Category.name == payload.name)),
+            ((Category.slug == slug) | (Category.name == payload.name)),
             Category.id != category_id,
         )
     )
     if duplicate:
         raise HTTPException(409, "分类标识或名称已存在")
     category.slug, category.name, category.parent_id, category.order_index = (
-        payload.slug,
+        slug,
         payload.name,
         payload.parent_id,
         payload.order_index,
@@ -418,9 +427,44 @@ async def skill_review_detail(
         raise HTTPException(404, "Skill 不存在")
     return {
         "skill_md": skill.skill_md,
+        "body_markdown": re.sub(r"\A\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)", "", skill.skill_md),
         "files": list(json.loads(skill.files_json)),
         "sha256": skill.sha256,
     }
+
+
+@router.patch(
+    "/skills/{skill_id}/content", response_model=AdminSkillOut,
+    dependencies=[Depends(verify_csrf)],
+)
+async def update_skill_content(
+    skill_id: int,
+    payload: SkillContentUpdate,
+    admin: User = Depends(admin_only),
+    session: AsyncSession = Depends(get_session),
+) -> SkillPackage:
+    """Update only the instructions while retaining validated frontmatter/files."""
+    skill = await session.get(SkillPackage, skill_id)
+    if not skill:
+        raise HTTPException(404, "Skill 不存在")
+    frontmatter = re.match(r"\A\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)", skill.skill_md)
+    if not frontmatter:
+        raise HTTPException(422, "Skill 文件缺少有效的 frontmatter")
+    skill_md = f"{frontmatter.group(0).rstrip()}\n\n{payload.body_markdown.strip()}\n"
+    try:
+        checked = validate_skill_archive(build_skill_archive(skill_md, skill.files_json))
+    except SkillValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    skill.skill_md = checked["skill_md"]
+    skill.sha256 = checked["sha256"]
+    await write_audit(
+        session, admin, "skill.content.update", "skill", str(skill.id),
+        {"name": skill.name, "version": skill.version},
+    )
+    await session.commit()
+    return await session.scalar(
+        select(SkillPackage).options(selectinload(SkillPackage.content_category)).where(SkillPackage.id == skill.id)
+    )
 
 
 @router.get("/skills/{skill_id}/download.zip")
@@ -499,16 +543,6 @@ async def update_skill_intro(
     )
 
 
-MCP_TOOL_CATALOG = {
-    "search_wiki": "搜索已发布的 Wiki 文章",
-    "get_wiki_article": "读取 Wiki 文章全文",
-    "list_courses": "列出已发布课程",
-    "get_lesson": "读取课程课文",
-    "list_projects": "列出已发布开源项目",
-    "list_skills": "列出已发布 Agent Skills",
-}
-
-
 async def ensure_mcp_settings(session: AsyncSession) -> tuple[MCPSettings, list[MCPToolSetting]]:
     settings_row = await session.get(MCPSettings, 1)
     if not settings_row:
@@ -525,16 +559,23 @@ async def ensure_mcp_settings(session: AsyncSession) -> tuple[MCPSettings, list[
     return settings_row, tools
 
 
+def mcp_settings_response(row: MCPSettings) -> dict:
+    return {
+        "enabled": row.enabled,
+        "auth_enabled": row.auth_enabled,
+        "has_token": bool(row.auth_token_hash),
+        "public_endpoint": "/mcp",
+        "admin_endpoint": "/mcp/admin",
+        "resources": list(MCP_RESOURCE_CATALOG),
+    }
+
+
 @router.get("/mcp/settings", response_model=MCPSettingsOut)
 async def get_mcp_settings(
     _admin: User = Depends(admin_only), session: AsyncSession = Depends(get_session)
 ) -> dict:
     row, _ = await ensure_mcp_settings(session)
-    return {
-        "enabled": row.enabled,
-        "auth_enabled": row.auth_enabled,
-        "has_token": bool(row.auth_token_hash),
-    }
+    return mcp_settings_response(row)
 
 
 @router.patch("/mcp/settings", response_model=MCPSettingsOut, dependencies=[Depends(verify_csrf)])
@@ -563,11 +604,7 @@ async def update_mcp_settings(
         },
     )
     await session.commit()
-    return {
-        "enabled": row.enabled,
-        "auth_enabled": row.auth_enabled,
-        "has_token": bool(row.auth_token_hash),
-    }
+    return mcp_settings_response(row)
 
 
 @router.get("/oauth/settings", response_model=OAuthSettingsOut)
@@ -580,6 +617,10 @@ async def get_oauth_settings(
         "github_configured": bool(row.github_client_id and row.github_client_secret),
         "gitee_client_id": row.gitee_client_id,
         "gitee_configured": bool(row.gitee_client_id and row.gitee_client_secret),
+        "ai_base_url": row.ai_base_url,
+        "ai_model": row.ai_model,
+        "ai_configured": _ai_configured(row),
+        "ai_api_key_configured": bool(row.ai_api_key),
     }
 
 
@@ -597,6 +638,9 @@ async def update_oauth_settings(
         "github_client_secret",
         "gitee_client_id",
         "gitee_client_secret",
+        "ai_base_url",
+        "ai_model",
+        "ai_api_key",
     ):
         value = getattr(payload, field)
         if value is not None:
@@ -610,6 +654,7 @@ async def update_oauth_settings(
         {
             "github": bool(row.github_client_id and row.github_client_secret),
             "gitee": bool(row.gitee_client_id and row.gitee_client_secret),
+            "ai": _ai_configured(row),
         },
     )
     await session.commit()
@@ -618,15 +663,113 @@ async def update_oauth_settings(
         "github_configured": bool(row.github_client_id and row.github_client_secret),
         "gitee_client_id": row.gitee_client_id,
         "gitee_configured": bool(row.gitee_client_id and row.gitee_client_secret),
+        "ai_base_url": row.ai_base_url,
+        "ai_model": row.ai_model,
+        "ai_configured": _ai_configured(row),
+        "ai_api_key_configured": bool(row.ai_api_key),
     }
+
+
+def _ai_completion_url(base_url: str) -> str:
+    try:
+        url = httpx.URL(base_url.strip())
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, "AI 模型服务地址无效") from exc
+    if url.scheme not in {"http", "https"} or url.username or url.password or url.query or url.fragment:
+        raise HTTPException(422, "AI 模型服务地址必须是不含凭证和查询参数的 HTTP(S) 地址")
+    path = url.path.rstrip("/")
+    if not path.endswith("/chat/completions"):
+        path += "/chat/completions"
+    return str(url.copy_with(path=path))
+
+
+def _ai_configured(row: MCPSettings) -> bool:
+    if not row.ai_base_url or not row.ai_model:
+        return False
+    try:
+        host = httpx.URL(row.ai_base_url).host
+    except (TypeError, ValueError):
+        return False
+    return bool(row.ai_api_key) or host in {"localhost", "127.0.0.1", "::1"}
+
+
+@router.post("/ai/completions", dependencies=[Depends(verify_csrf)])
+async def ai_completion(
+    request: Request,
+    _admin: User = Depends(admin_only),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    row, _ = await ensure_mcp_settings(session)
+    if not row.ai_base_url or not row.ai_model or not _ai_configured(row):
+        raise HTTPException(409, "请先在第三方绑定中完成 AI API 配置")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "AI 请求格式无效") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("stream"), bool) or not isinstance(payload.get("messages"), list):
+        raise HTTPException(400, "AI 请求必须使用 Chat Completions 格式，并明确指定 stream")
+    stream = payload["stream"]
+    payload = {**payload, "model": row.ai_model, "stream": stream}
+    headers = {
+        "Accept": "text/event-stream" if stream else "application/json",
+        **({"Authorization": f"Bearer {row.ai_api_key}"} if row.ai_api_key else {}),
+    }
+    client = httpx.AsyncClient(timeout=60, follow_redirects=False)
+    try:
+        upstream = await client.send(
+            client.build_request("POST", _ai_completion_url(row.ai_base_url), json=payload, headers=headers),
+            stream=stream,
+        )
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(502, "无法连接 AI 模型服务，请检查地址和网络") from exc
+    if not stream:
+        try:
+            content = await upstream.aread()
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+        return Response(content=content, status_code=upstream.status_code, media_type="application/json")
+    if upstream.status_code >= 400:
+        try:
+            content = await upstream.aread()
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+        return Response(content=content, status_code=upstream.status_code, media_type=upstream.headers.get("content-type", "application/json"))
+
+    async def relay() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        relay(),
+        status_code=upstream.status_code,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/mcp/tools", response_model=list[MCPToolOut])
 async def list_mcp_tools(
     _admin: User = Depends(admin_only), session: AsyncSession = Depends(get_session)
-) -> list[MCPToolSetting]:
+) -> list[dict]:
     _, tools = await ensure_mcp_settings(session)
-    return tools
+    return [
+        {
+            "id": tool.id,
+            "name": tool.name,
+            "description": tool.description,
+            "enabled": tool.enabled,
+            "scope": MCP_TOOL_SCOPE.get(tool.name, "public"),
+            "endpoint": "/mcp/admin" if MCP_TOOL_SCOPE.get(tool.name) == "admin" else "/mcp",
+        }
+        for tool in tools
+    ]
 
 
 @router.patch(
@@ -945,6 +1088,8 @@ async def list_admin_courses(
 async def save_course(payload: CourseWrite, course: Course, session: AsyncSession, admin: User):
     from sqlalchemy.exc import IntegrityError
 
+    if course.id and not payload.slug:
+        payload.slug = course.slug
     if course.id and course.is_standalone != payload.is_standalone:
         raise HTTPException(422, "不能直接改变目录类型")
     if payload.is_standalone:
@@ -996,6 +1141,8 @@ async def create_course(
     admin: User = Depends(admin_only),
     session: AsyncSession = Depends(get_session),
 ):
+    if not payload.slug:
+        payload.slug = f"course-{uuid.uuid4().hex[:12]}"
     return await save_course(payload, Course(lessons=[]), session, admin)
 
 

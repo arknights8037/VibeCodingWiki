@@ -9,7 +9,7 @@ const router = useRouter();
 const filters = reactive({
   q: String(route.query.q || ""),
   phrase: "",
-  category: "",
+  category: String(route.query.category || ""),
   tags: "",
   difficulty: "",
   updated_after: "",
@@ -55,7 +55,7 @@ async function search() {
       },
     );
     if (version !== searchVersion || lifecycle.signal.aborted) return;
-    await router.replace({ query: filters.q ? { q: filters.q } : {} });
+    await router.replace({ query: { ...(filters.q ? { q: filters.q } : {}), ...(filters.category ? { category: filters.category } : {}) } });
     if (version !== searchVersion || lifecycle.signal.aborted) return;
     articles.value = response.data.items;
     total.value = response.data.total;
@@ -66,8 +66,10 @@ async function search() {
   }
 }
 
-watch(() => route.query.q, (value) => {
-  if (String(value || '') !== filters.q) { filters.q = String(value || ''); filters.page = 1; void search(); }
+watch(() => [route.query.q, route.query.category], ([query, category]) => {
+  if (String(query || '') !== filters.q || String(category || '') !== filters.category) {
+    filters.q = String(query || ''); filters.category = String(category || ''); filters.page = 1; void search();
+  }
 });
 
 function changePage(delta: number) {

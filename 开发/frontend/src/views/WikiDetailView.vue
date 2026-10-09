@@ -38,7 +38,7 @@ onBeforeUnmount(closeTerm);
 <template>
   <div class="page narrow">
     <p v-if="loading" role="status">正在加载正文…</p>
-    <el-alert v-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">重新加载</el-button><RouterLink to="/courses">返回课程列表</RouterLink></el-alert>
+    <el-alert v-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">重新加载</el-button><RouterLink to="/wiki">返回知识库</RouterLink></el-alert>
     <template v-if="article">
       <header class="article-head">
         <div class="eyebrow">{{ article.category.name }}</div>
@@ -50,7 +50,7 @@ onBeforeUnmount(closeTerm);
           }}</span>
         </div>
       </header>
-      <MarkdownBody :source="article.body_markdown || ''" :content-json="article.content_json" :terms="terms" @term-select="selectTerm" />
+      <MarkdownBody :source="article.body_markdown || ''" :title-to-omit="article.title" :content-json="article.content_json" :terms="terms" @term-select="selectTerm" />
       <WikiTermPopover v-if="selectedTerm" :term="selectedTerm" @close="closeTerm" />
     </template>
   </div>

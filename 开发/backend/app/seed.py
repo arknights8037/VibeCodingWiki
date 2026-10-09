@@ -113,11 +113,11 @@ async def seed() -> None:
                     session.add(existing_lesson)
                 existing_lesson.course_id = course.id
                 existing_lesson.title = lesson_item["title"]
-                existing_lesson.objective = lesson_item["objective"]
+                existing_lesson.objective = ""
                 existing_lesson.body_markdown = body_markdown
                 existing_lesson.content_json = markdown_to_content(body_markdown)
-                existing_lesson.practice = lesson_item["practice"]
-                existing_lesson.completion_criteria = lesson_item["criteria"]
+                existing_lesson.practice = ""
+                existing_lesson.completion_criteria = ""
                 existing_lesson.estimated_minutes = 40
                 existing_lesson.order_index = lesson_order
                 existing_lesson.status = PublicationStatus.published

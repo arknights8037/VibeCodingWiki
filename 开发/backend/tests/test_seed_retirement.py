@@ -70,7 +70,7 @@ async def test_existing_technical_content_is_retired_without_losing_progress(cli
     courses = (await client.get("/api/v1/courses")).json()
     assert "vue-typescript" not in {course["slug"] for course in courses}
     assert "custom-course" in {course["slug"] for course in courses}
-    assert [course["order_index"] for course in courses] == [1, 2, 3, 4, 5, 10]
+    assert [course["order_index"] for course in courses] == list(range(1, 11))
     assert (await client.get("/api/v1/courses/vue-typescript")).status_code == 404
     assert (await client.get("/api/v1/wiki/vue-3")).status_code == 404
     assert (await client.get("/api/v1/wiki", params={"q": "Vue"})).json()["total"] == 0

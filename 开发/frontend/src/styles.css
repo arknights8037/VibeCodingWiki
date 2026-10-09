@@ -263,6 +263,13 @@ h3 {
 .security-fields { display:grid; gap:12px; max-width:520px; }
 .oauth-row { display:flex; gap:8px; align-items:center; }
 .oauth-row .el-input { flex:1; }
+.oauth-account-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; margin-top:8px; }
+.oauth-account-card { display:grid; gap:8px; padding:16px; border:1px solid #e8e4dc; border-radius:9px; background:#fcfbf8; }
+.oauth-account-card > div { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.oauth-account-card strong { color:var(--docs-text); font-size:14px; }
+.oauth-account-card p { margin:0; min-height:19px; color:var(--docs-muted); font-size:12px; overflow-wrap:anywhere; }
+.oauth-bound { color:#4d8066; font-size:11px; }
+.oauth-unbound { color:#9a9488; font-size:11px; }
 .token-row { display:flex; gap:12px; align-items:center; }
 .token-row .el-input { flex:1; }
 .empty-account { text-align:center; padding:50px 20px 55px; color:#9a9488; }
@@ -283,12 +290,12 @@ h3 {
   .account-identity{gap:15px}
   .account-identity .el-avatar{width:58px!important;height:58px!important}
   .account-summary{display:none}
-  .account-menu{position:static;display:flex;overflow-x:auto;gap:6px;border-radius:10px;padding:8px;scrollbar-width:none}
-  .account-menu::-webkit-scrollbar{display:none}
+  .account-menu{position:static;display:flex;overflow-x:auto;gap:6px;border-radius:10px;padding:8px}
   .account-menu-title{display:none}
   .account-menu button{min-width:148px;padding:11px 12px}
   .account-menu button::before{inset:auto 10px 4px;height:3px;width:auto}
   .account-form-grid{grid-template-columns:1fr}
+  .oauth-account-grid{grid-template-columns:1fr}
   .account-panel{padding:22px 18px}
   .panel-heading{flex-direction:column;gap:10px}
   .token-row{align-items:stretch;flex-direction:column}

@@ -11,3 +11,4 @@ import "./ui-controls.css";
 createApp(App).use(createPinia()).use(router).use(ElementPlus).mount("#app");
 
 import "./markdown-cards.css";
+import "./scrollbars.css";

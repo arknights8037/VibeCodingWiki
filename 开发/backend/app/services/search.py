@@ -5,7 +5,7 @@ from sqlalchemy import Select, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Difficulty, PublicationStatus, Tag, WikiArticle, article_tags
+from app.models import Category, Difficulty, PublicationStatus, Tag, WikiArticle, article_tags
 
 TOKEN_RE = re.compile(r'"([^"]{1,80})"|([\w\u4e00-\u9fff-]{1,80})')
 
@@ -37,7 +37,11 @@ async def search_wiki_articles(
         selectinload(WikiArticle.category), selectinload(WikiArticle.tags)
     )
     if category:
-        filters.append(WikiArticle.category.has(slug=category))
+        category_ids = select(Category.id).where(Category.slug == category).cte("category_descendants", recursive=True)
+        category_ids = category_ids.union(
+            select(Category.id).join(category_ids, Category.parent_id == category_ids.c.id)
+        )
+        filters.append(WikiArticle.category_id.in_(select(category_ids.c.id)))
     if difficulty:
         filters.append(WikiArticle.difficulty == difficulty)
     if updated_after:

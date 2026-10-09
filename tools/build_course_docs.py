@@ -134,7 +134,7 @@ def add_requirement_doc() -> None:
         cell.text = text
         set_cell_shading(cell, "BFE7DD")
     rows = [
-        ("F-01", "课程路径", "5 模块；目标、前置、正文、实践、完成标准", "Must"),
+        ("F-01", "课程路径", "9 模块，分基础、进阶、专业三个阶段；目标、前置、正文、实践、完成标准", "Must"),
         ("F-02", "Wiki 高级查询", "全文/短语/分类/标签/难度/时间/分页/排序", "Must"),
         ("F-03", "身份与进度", "Argon2；访问与可撤销刷新 Cookie；CSRF", "Must"),
         ("F-04", "项目投稿", "草稿—待审—发布/驳回；驳回可重投", "Must"),
@@ -270,7 +270,7 @@ def add_weekly_doc() -> None:
     add_bullets(document, [
         "明确 VibeCodingWiki 的用户、范围、角色和审核状态机。",
         "确定 Vue 3 + TypeScript / FastAPI / SQLite / Docker Compose 技术路线。",
-        "完成可运行工程骨架、5 模块课程与 5 个 Wiki 种子内容。",
+        "完成可运行工程骨架、9 模块课程与 5 个 Wiki 种子内容。",
         "形成需求、架构、接口、安全、贡献规范以及课程汇报制品。",
     ])
     document.add_heading("本周已生成制品（需团队复核后认领）", level=2)

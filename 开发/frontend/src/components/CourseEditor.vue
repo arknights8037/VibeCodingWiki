@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { Refresh, Search, Plus, FolderAdd, FolderOpened, EditPen, ArrowUp, ArrowDown, Delete, Back, DocumentChecked, Upload, Download } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -14,6 +14,10 @@ type Draft = Omit<Course, 'id' | 'lessons'> & { id?: number; status: string; les
 const catalog = ref<Draft[]>([]);
 const draft = ref<Draft>();
 const active = ref(-1);
+const categoryDialog = ref(false);
+const categorySaving = ref(false);
+const categoryError = ref('');
+const categoryForm = reactive({ title: '', slug: '', summary: '', prerequisites: '无', status: 'draft', directory_collapsible: true, order_index: 0 });
 const entryQuery = ref('');
 const entryStatus = ref('all');
 const categoryEntries = computed(() => (draft.value?.lessons || []).map((entry, index) => ({ entry, index })).filter(({ entry }) =>
@@ -89,6 +93,25 @@ async function create(standalone = false) {
   draft.value = { title: '', slug: '', summary: '', prerequisites: '无', difficulty: level.value, order_index: Math.max(-1, ...visibleCatalog.value.map(item => item.order_index)) + 1, is_standalone: standalone, directory_collapsible: true, status: 'draft', lessons: [] };
   active.value = -1; saved.value = '';
   if (standalone) addLesson();
+}
+function openCategoryDialog() {
+  categoryError.value = '';
+  Object.assign(categoryForm, { title: '', slug: '', summary: '', prerequisites: '无', status: 'draft', directory_collapsible: true, order_index: Math.max(-1, ...visibleCatalog.value.map(item => item.order_index)) + 1 });
+  categoryDialog.value = true;
+}
+async function saveCategory() {
+  categoryError.value = '';
+  const slug = categoryForm.slug.trim() ? normalizeSlug(categoryForm.slug) : undefined;
+  if (!categoryForm.title.trim()) { categoryError.value = '请填写分类名称'; return; }
+  if (slug && slugError(slug)) { categoryError.value = slugError(slug); return; }
+  categorySaving.value = true;
+  try {
+    await api.post('/admin/courses', { ...categoryForm, title: categoryForm.title.trim(), slug, difficulty: level.value, lessons: [] });
+    categoryDialog.value = false;
+    await load();
+    ElMessage.success('分类已创建');
+  } catch (reason) { categoryError.value = apiError(reason); }
+  finally { categorySaving.value = false; }
 }
 function addLesson() {
   draft.value!.lessons.push({ title: '', slug: '', objective: '', body_markdown: '', practice: '', completion_criteria: '', estimated_minutes: 30, order_index: draft.value!.lessons.length, status: 'draft' });
@@ -238,7 +261,7 @@ async function save(publish = false) {
       <el-radio-group :model-value="level" aria-label="学习等级" :disabled="saving" @update:model-value="changeLevel">
         <el-radio-button v-for="item in levels" :key="item.value" :value="item.value">{{ item.label }}</el-radio-button>
       </el-radio-group>
-      <div v-if="!draft"><el-button :icon="FolderAdd" :disabled="loading || saving" @click="create(false)">新增分类</el-button><el-button :icon="Plus" :disabled="loading || saving" @click="create(true)">新增无分类条目</el-button></div>
+      <div v-if="!draft"><el-button :icon="FolderAdd" :disabled="loading || saving" @click="openCategoryDialog">新增分类</el-button><el-button :icon="Plus" :disabled="loading || saving" @click="create(true)">新增无分类条目</el-button></div>
     </div>
     <template v-if="!draft">
       <AdminListTable :data="directoryRows" row-key="key" default-expand-all class="course-directory-table" empty-text="该等级暂无分类，点击新增分类开始创建">
@@ -263,7 +286,7 @@ async function save(publish = false) {
       <div v-if="active === -1" class="content-edit-layout category-management-layout">
         <section class="category-entries" aria-label="分类条目管理">
           <div class="category-list-header">
-            <div><h2>{{ draft.title || '新分类' }}</h2><span>{{ draft.lessons.length }} 个条目</span></div>
+            <div><h2>{{ draft.title || '新分类' }}</h2><span>{{ draft.lessons.length }} 个条目</span><p class="category-list-helper">先整理条目，再在右侧设置分类信息</p></div>
             <el-button :icon="Plus" type="primary" plain :disabled="saving" @click="addLesson">新增条目</el-button>
           </div>
           <div class="category-list-filters">
@@ -329,11 +352,25 @@ async function save(publish = false) {
         </template>
       </ContentEditorLayout>
     </div>
+    <el-dialog v-model="categoryDialog" title="新增课程分类" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="!categorySaving">
+      <el-form label-position="top" :disabled="categorySaving" @submit.prevent="saveCategory">
+        <el-form-item label="分类名称"><el-input v-model="categoryForm.title" aria-label="分类名称" maxlength="160" autofocus placeholder="例如：前端基础" /></el-form-item>
+        <el-form-item label="分类英文标识（可选）"><el-input v-model="categoryForm.slug" aria-label="分类英文标识" placeholder="可留空，系统会自动生成" @blur="categoryForm.slug = normalizeSlug(categoryForm.slug)" /></el-form-item>
+        <div class="course-form-row"><el-form-item label="分类状态"><el-select v-model="categoryForm.status" aria-label="分类状态"><el-option label="草稿" value="draft" /><el-option label="发布" value="published" /><el-option label="归档" value="archived" /></el-select></el-form-item><el-form-item label="目录折叠"><el-switch v-model="categoryForm.directory_collapsible" aria-label="允许折叠" active-text="允许折叠" inactive-text="始终展开" /></el-form-item></div>
+        <el-form-item label="课程摘要"><el-input v-model="categoryForm.summary" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" /></el-form-item>
+        <el-form-item label="开始前准备"><el-input v-model="categoryForm.prerequisites" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" /></el-form-item>
+        <p v-if="categoryError" class="error" role="alert">{{ categoryError }}</p>
+      </el-form>
+      <template #footer><el-button :disabled="categorySaving" @click="categoryDialog = false">取消</el-button><el-button type="primary" :loading="categorySaving" @click="saveCategory">创建分类</el-button></template>
+    </el-dialog>
   </div>
 </template>
 <style scoped>
 .category-entries { min-width:0; }
+.category-management-layout { grid-template-columns:minmax(0,1fr) 340px; gap:24px; align-items:start; }
 .category-list-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+.category-list-header > div { min-width:0; }
+.category-list-helper { margin:4px 0 0; color:#9a968b; font-size:11px; }
 .category-list-header h2 { margin:0 0 4px; font-size:18px; line-height:1.5; overflow-wrap:anywhere; }
 .category-list-header span, .entry-slug { font-size:11px; color:#8a877e; }
 .category-list-filters { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
@@ -346,13 +383,15 @@ async function save(publish = false) {
 
 
 .content-writing-area { min-width:0; }
-.content-writing-area :deep(.course-block-editor) { min-height:520px; border-radius:6px; overflow:hidden; }
-.content-writing-area :deep(.editor-shell__content) { padding:24px 28px !important; line-height:1.9; }
+.content-writing-area :deep(.course-block-editor) { min-height:520px; }
 .content-properties { min-width:0; border:1px solid #e5e5e2; border-radius:6px; background:#fafaf8; position:sticky; top:82px; }
 .properties-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px; border-bottom:1px solid #e5e5e2; }
 .properties-actions .el-button { margin:0; padding:8px; }
 .properties-save-state { grid-column:1 / -1; font-size:11px; color:#827d70; }
 .properties-form { padding:16px 14px; }
+.category-management-layout .properties-form { padding-top:18px; }
+.category-management-layout .properties-form::before { content:'分类设置'; display:block; margin-bottom:14px; color:#56534b; font-size:14px; font-weight:600; }
+.category-management-layout .properties-form .el-breadcrumb { margin-bottom:18px; }
 .properties-form .el-breadcrumb { margin-bottom:20px; font-size:12px; line-height:1.6; }
 .properties-form .el-form-item { margin-bottom:16px; }
 .properties-form .el-input-number, .properties-form .el-select { width:100%; }
@@ -365,7 +404,8 @@ async function save(publish = false) {
   .content-properties { position:static; }
   .properties-scroll :deep(.el-scrollbar__wrap) { max-height:none !important; }
   .content-writing-area :deep(.course-block-editor) { height:60dvh !important; min-height:380px; }
-  .content-writing-area :deep(.editor-shell__content) { padding:18px !important; }
+  .content-writing-area :deep(.editor-shell__content) { padding:24px 18px 72px !important; }
+  .category-management-layout { grid-template-columns:minmax(0,1fr); }
 }
 
 .directory-row-actions { display:grid; grid-template-columns:100px 100px 70px 70px 70px; gap:6px; align-items:center; }

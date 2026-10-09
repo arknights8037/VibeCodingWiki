@@ -1,6 +1,8 @@
 import { defineConfig } from "@playwright/test";
 import { existsSync } from "node:fs";
 
+const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+
 const venvPython = process.platform === "win32"
   ? "../backend/.venv/Scripts/python.exe"
   : "../backend/.venv/bin/python";
@@ -11,8 +13,8 @@ export default defineConfig({
   outputDir: "./.local/integration-results",
   workers: 1,
   timeout: 45000,
-  use: { baseURL: "http://127.0.0.1:5174", trace: "retain-on-failure" },
-  webServer: [
+  use: { baseURL: externalBaseUrl || "http://127.0.0.1:5174", trace: "retain-on-failure" },
+  webServer: externalBaseUrl ? undefined : [
     {
       command: `"${python}" tests/serve_api.py`,
       url: "http://127.0.0.1:8001/healthz",

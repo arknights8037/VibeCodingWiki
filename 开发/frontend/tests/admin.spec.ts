@@ -1,9 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 test('admin edits existing wiki and changes account status', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
   const admin = { id: 1, email: 'admin@example.com', display_name: '管理员', role: 'admin', is_active: true };
   let active = true;
   let title = '已有词条';
+  let body = '已有正文足够二十个字符用于后台编辑内容验证。';
+  let contentJson = '';
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -12,8 +16,8 @@ test('admin edits existing wiki and changes account status', async ({ page }) =>
     else if (path.endsWith('/admin/users')) json = [admin, { ...admin, id: 2, role: 'user', display_name: '测试用户', is_active: active }];
     else if (path.endsWith('/admin/wiki/categories')) json = [{ id: 7, slug: 'tools', name: '工程工具', parent_id: null, order_index: 0, children: [], article_count: 1 }];
     else if (path.endsWith('/users/2/status')) { active = route.request().postDataJSON().is_active; json = {}; }
-    else if (path.endsWith('/admin/wiki/3') && method === 'PUT') { title = route.request().postDataJSON().title; json = {}; }
-    else if (path.endsWith('/admin/wiki')) json = [{ id: 3, slug: 'existing', title, summary: '已有摘要足够十个字符用于编辑', body_markdown: '已有正文足够二十个字符用于后台编辑内容验证。', difficulty: 'beginner', category: { id: 7, name: '工程工具', slug: 'tools' }, tags: [], status: 'draft' }];
+    else if (path.endsWith('/admin/wiki/3') && method === 'PUT') { const payload = route.request().postDataJSON(); title = payload.title; body = payload.body_markdown; contentJson = payload.content_json; json = {}; }
+    else if (path.endsWith('/admin/wiki')) json = [{ id: 3, slug: 'existing', title, summary: '已有摘要足够十个字符用于编辑', body_markdown: body, content_json: contentJson, difficulty: 'beginner', category: { id: 7, name: '工程工具', slug: 'tools' }, tags: [], status: 'draft' }];
     await route.fulfill({ json });
   });
   await page.goto('/admin');
@@ -21,11 +25,25 @@ test('admin edits existing wiki and changes account status', async ({ page }) =>
   await page.getByRole('button', { name: '编辑内容', exact: true }).click();
   await expect(page.getByLabel('标题', { exact: true })).toHaveValue('已有词条');
   await page.getByLabel('标题', { exact: true }).fill('修改后的词条');
+  const editor = page.locator('.editor-shell__content[contenteditable="true"]');
+  await expect(editor).toBeVisible();
+  await expect(page.locator('.editor-shell__image-input').first()).toHaveCSS('position', 'fixed');
+  await expect(editor).toHaveCSS('position', 'relative');
+  await expect(editor).toContainText(body);
+  await editor.fill('修改后的正文足够二十个字符，用于验证块编辑器输入和保存。');
   await page.getByRole('button', { name: '保存词条' }).click();
+  await expect(page.getByText('词条已保存', { exact: true })).toBeVisible();
+  expect(body).toContain('修改后的正文');
+  expect(JSON.parse(contentJson).type).toBe('doc');
+  await page.getByRole('button', { name: '返回列表', exact: true }).click();
+  await page.getByRole('button', { name: '编辑内容', exact: true }).click();
+  await expect(editor).toContainText('修改后的正文');
+  await page.screenshot({ path: '.local/verification/editor-restored.png', fullPage: true });
   await page.getByRole('button', { name: '用户', exact: true }).click();
   const row = page.getByRole('row').filter({ hasText: '测试用户' });
   await row.getByRole('button', { name: '停用', exact: true }).click();
   await expect(row.getByRole('button', { name: '启用', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test('admin can open the password dialog and submit a password change', async ({ page }) => {

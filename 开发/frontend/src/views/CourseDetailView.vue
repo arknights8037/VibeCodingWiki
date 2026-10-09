@@ -9,6 +9,9 @@ import type { Course } from "@/types";
 
 const route = useRoute();
 const course = ref<Course | null>(null);
+const lessonSlug = computed(() => String(route.params.lessonSlug || (route.hash.startsWith('#lesson-') ? route.hash.slice(8) : '')));
+const lesson = computed(() => lessonSlug.value ? course.value?.lessons.find(item => item.slug === lessonSlug.value) : course.value?.lessons[0]);
+const pageTitle = computed(() => course.value?.is_standalone ? course.value.title : lesson.value?.title || course.value?.title || '');
 const error = ref("");
 const loading = ref(true);
 const terms = ref<WikiTerm[]>([]);
@@ -58,6 +61,7 @@ watch(() => route.params.slug, () => {
   closeTerm();
   void load();
 });
+watch(lessonSlug, closeTerm);
 onMounted(() => {
   void load();
   timer = setInterval(refreshVisible, 30_000);
@@ -78,14 +82,14 @@ onBeforeUnmount(() => {
     <template v-if="course">
       <header class="article-head">
         <div class="eyebrow">
-          MODULE {{ String(course.order_index).padStart(2, "0") }}
+          {{ course.is_standalone ? '页面' : course.title }}
         </div>
-        <h1>{{ course.title }}</h1>
-        <p class="lede">{{ course.summary }}</p>
+        <h1>{{ pageTitle }}</h1>
       </header>
       <p v-if="termsError" class="term-index-status" role="status">术语释义暂时无法更新，正文仍可阅读。<el-button text @click="load(true)">重试</el-button></p>
-      <section v-for="lesson in course.lessons" :key="lesson.id" :id="`lesson-${lesson.slug}`">
-        <MarkdownBody :source="lesson.body_markdown" :content-json="lesson.content_json" :terms="terms" @term-select="selectTerm" />
+      <p v-if="lessonSlug && !lesson" role="alert">该页面不存在或尚未发布，请从左侧目录选择其他页面。</p>
+      <section v-else-if="lesson" :key="lesson.id" :id="`lesson-${lesson.slug}`">
+        <MarkdownBody :source="lesson.body_markdown" :title-to-omit="pageTitle" :content-json="lesson.content_json" :terms="terms" @term-select="selectTerm" />
       </section>
       <WikiTermPopover v-if="selectedTerm" :term="selectedTerm" @close="closeTerm" />
     </template>

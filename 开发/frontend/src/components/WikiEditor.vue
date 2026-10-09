@@ -20,6 +20,13 @@ const id = ref<number>();
 const baseline = ref('');
 const form = reactive({ title:'', slug:'', summary:'', body_markdown:'', content_json:'', category_id:null as number | null, category:'AI Coding', tags:'', difficulty:'beginner', status:'draft', order_index:0 });
 const categoryForm = reactive({ name:'', slug:'', parent_id:null as number | null, order_index:0 });
+const categoryDialog = ref(false);
+const categorySaving = ref(false);
+const categoryError = ref('');
+const categoryLoading = ref(false);
+const moveDialog = ref(false);
+const movingRow = ref<Row | null>(null);
+const moveTarget = ref<number | null>(null);
 const snapshot = () => JSON.stringify(mode.value === 'article' ? form : categoryForm);
 const dirty = computed(() => mode.value !== 'list' && snapshot() !== baseline.value);
 function flatten(items: WikiCategory[], depth = 0): Array<WikiCategory & { depth: number }> { return items.flatMap(item => [{ ...item, depth }, ...flatten(item.children || [], depth + 1)]); }
@@ -37,6 +44,17 @@ function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value) { event.preve
 onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void refresh(); });
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload));
 async function load() { const [a,c] = await Promise.all([api.get<Article[]>('/admin/wiki'), api.get<WikiCategory[]>('/admin/wiki/categories')]); articles.value = a.data; categories.value = c.data; }
+async function refreshCategories() {
+  categoryLoading.value = true;
+  try {
+    categories.value = (await api.get<WikiCategory[]>('/admin/wiki/categories')).data;
+    error.value = '';
+  } catch (reason) {
+    error.value = apiError(reason);
+  } finally {
+    categoryLoading.value = false;
+  }
+}
 async function run(action: () => Promise<void>) { if (busy.value) return; busy.value = true; error.value = ''; try { await action(); } catch (reason) { error.value = apiError(reason); } finally { busy.value = false; } }
 async function refresh() { if (!await canLeave()) return; await run(async () => { await load(); mode.value = 'list'; }); }
 defineExpose({ refresh, canLeave });
@@ -49,10 +67,47 @@ async function editArticle(article?: Article, categoryId?: number) {
 }
 async function editCategory(category?: WikiCategory) {
   if (!await canLeave()) return;
+  if (!category) {
+    Object.assign(categoryForm, { name:'', slug:'', parent_id:null, order_index:0 });
+    categoryError.value = '';
+    categoryDialog.value = true;
+    return;
+  }
   id.value = category?.id; mode.value = 'category'; error.value = '';
   Object.assign(categoryForm, { name:category?.name || '', slug:category?.slug || '', parent_id:category?.parent_id ?? null, order_index:category?.order_index || 0 }); baseline.value = snapshot();
 }
+async function saveNewCategory() {
+  categoryError.value = '';
+  if (!categoryForm.name.trim()) { categoryError.value = '请填写分类名称'; return; }
+  categorySaving.value = true;
+  try {
+    await api.post('/admin/wiki/categories', { ...categoryForm, name: categoryForm.name.trim(), slug: categoryForm.slug.trim().toLowerCase() || undefined });
+    categoryDialog.value = false;
+    await load();
+    ElMessage.success('分类已创建');
+  } catch (reason) { categoryError.value = apiError(reason); }
+  finally { categorySaving.value = false; }
+}
 const invalidParents = computed(() => { const item = flat.value.find(c => c.id === id.value); return new Set(item ? flatten([item]).map(c => c.id) : []); });
+const moveCategoryOptions = computed(() => {
+  if (!movingRow.value?.category) return flat.value;
+  const excluded = new Set(flatten([movingRow.value.category]).map(c => c.id));
+  return flat.value.filter(c => !excluded.has(c.id));
+});
+function openMove(row: Row) { movingRow.value = row; moveTarget.value = row.article ? row.article.category.id : row.category!.parent_id ?? null; moveDialog.value = true; }
+async function saveMove() {
+  const row = movingRow.value; if (!row) return;
+  await run(async () => {
+    if (row.article) {
+      const article = row.article;
+      await api.put(`/admin/wiki/${article.id}`, { title: article.title, slug: article.slug, summary: article.summary, body_markdown: article.body_markdown, content_json: article.content_json, category_id: moveTarget.value, category: flat.value.find(c => c.id === moveTarget.value)?.name || article.category.name, tags: article.tags.map(t => t.name), difficulty: article.difficulty, status: article.status, order_index: article.order_index || 0 });
+    } else {
+      const category = row.category!;
+      await api.put(`/admin/wiki/categories/${category.id}`, { name: category.name, slug: category.slug, parent_id: moveTarget.value, order_index: category.order_index || 0 });
+    }
+    moveDialog.value = false; movingRow.value = null; await load(); ElMessage.success('移动成功');
+  });
+}
 async function save() {
   if (mode.value === 'article' && !form.category_id) { error.value = '请选择分类'; return; }
   await run(async () => {
@@ -85,7 +140,7 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
         <el-table-column label="分类与词条" min-width="240"><template #default="{ row }"><button class="title-button" @click="row.article ? editArticle(row.article) : editCategory(row.category)">{{ row.title }}</button></template></el-table-column>
         <el-table-column label="类型" width="80"><template #default="{ row }">{{ row.article ? '词条' : '分类' }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag v-if="row.article" size="small" :type="row.article.status === 'published' ? 'success' : 'info'">{{ row.article.status === 'published' ? '已发布' : '草稿' }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" min-width="440"><template #default="{ row }"><div class="admin-row-actions"><el-button :icon="row.article ? EditPen : FolderOpened" @click="row.article ? editArticle(row.article) : editCategory(row.category)">{{ row.article ? '编辑内容' : '管理分类' }}</el-button><el-button v-if="row.category" :icon="Plus" @click="editArticle(undefined, row.category.id)">新增词条</el-button><el-button :icon="ArrowUp" :disabled="!canMove(row, -1)" @click="move(row, -1)">上移</el-button><el-button :icon="ArrowDown" :disabled="!canMove(row, 1)" @click="move(row, 1)">下移</el-button><el-button :icon="Delete" type="danger" plain @click="remove(row)">移除</el-button></div></template></el-table-column>
+        <el-table-column label="操作" min-width="440"><template #default="{ row }"><div class="admin-row-actions"><el-button :icon="row.article ? EditPen : FolderOpened" @click="row.article ? editArticle(row.article) : editCategory(row.category)">{{ row.article ? '编辑内容' : '管理分类' }}</el-button><el-button v-if="row.category" :icon="Plus" @click="editArticle(undefined, row.category.id)">新增词条</el-button><el-button @click="openMove(row)">移动到</el-button><el-button :icon="ArrowUp" :disabled="!canMove(row, -1)" @click="move(row, -1)">上移</el-button><el-button :icon="ArrowDown" :disabled="!canMove(row, 1)" @click="move(row, 1)">下移</el-button><el-button :icon="Delete" type="danger" plain @click="remove(row)">移除</el-button></div></template></el-table-column>
       </AdminListTable>
     </template>
     <ContentEditorLayout v-else-if="mode === 'article'">
@@ -95,7 +150,7 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
         <el-form-item label="标题"><el-input v-model="form.title" aria-label="标题" maxlength="180" /></el-form-item>
         <el-form-item label="英文标识"><el-input v-model="form.slug" aria-label="英文标识" placeholder="例如 ai-coding" /></el-form-item>
         <el-form-item label="摘要"><el-input v-model="form.summary" aria-label="摘要" type="textarea" :autosize="{ minRows:2, maxRows:5 }" maxlength="500" /></el-form-item>
-        <el-form-item label="分类"><el-select v-model="form.category_id" aria-label="分类"><el-option v-for="c in flat" :key="c.id" :value="c.id" :label="'　'.repeat(c.depth) + c.name" /></el-select></el-form-item>
+        <el-form-item label="分类"><div class="category-select-row"><el-select v-model="form.category_id" aria-label="分类"><el-option v-for="c in flat" :key="c.id" :value="c.id" :label="'　'.repeat(c.depth) + c.name" /></el-select><el-button link :loading="categoryLoading" @click="refreshCategories">刷新分类</el-button></div></el-form-item>
         <el-form-item label="词条状态"><el-select v-model="form.status" aria-label="词条状态"><el-option value="draft" label="草稿" /><el-option value="published" label="已发布" /></el-select></el-form-item>
         <el-form-item label="难度"><el-select v-model="form.difficulty" aria-label="难度"><el-option value="beginner" label="基础" /><el-option value="intermediate" label="进阶" /><el-option value="advanced" label="专业" /></el-select></el-form-item>
         <el-form-item label="标签"><el-input v-model="form.tags" aria-label="标签" placeholder="用英文逗号分隔" /></el-form-item>
@@ -110,6 +165,19 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
       <el-button :icon="DocumentChecked" native-type="submit" type="primary" :loading="busy">保存分类</el-button>
     </el-form>
   </div>
+    <el-dialog v-model="categoryDialog" title="新增知识库分类" width="min(520px, calc(100vw - 32px))" :close-on-click-modal="!categorySaving">
+      <el-form label-position="top" :disabled="categorySaving" @submit.prevent="saveNewCategory">
+        <el-form-item label="分类名称"><el-input v-model="categoryForm.name" aria-label="分类名称" autofocus placeholder="例如：工程实践" /></el-form-item>
+        <el-form-item label="分类英文标识（可选）"><el-input v-model="categoryForm.slug" aria-label="分类英文标识" placeholder="可留空，系统会自动生成" /></el-form-item>
+        <el-form-item label="父级分类"><el-select v-model="categoryForm.parent_id" aria-label="父级分类" style="width:100%"><el-option :value="null" label="顶级分类" /><el-option v-for="c in flat" :key="c.id" :value="c.id" :label="'　'.repeat(c.depth) + c.name" /></el-select></el-form-item>
+        <p v-if="categoryError" class="error" role="alert">{{ categoryError }}</p>
+      </el-form>
+      <template #footer><el-button :disabled="categorySaving" @click="categoryDialog=false">取消</el-button><el-button type="primary" :loading="categorySaving" @click="saveNewCategory">创建分类</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="moveDialog" :title="movingRow?.article ? '移动词条' : '移动分类'" width="min(460px, calc(100vw - 32px))">
+      <el-form label-position="top"><el-form-item :label="movingRow?.article ? '目标分类' : '目标父级分类'"><el-select v-model="moveTarget" style="width:100%"><el-option v-if="!movingRow?.article" :value="null" label="顶级分类" /><el-option v-for="c in moveCategoryOptions" :key="c.id" :value="c.id" :label="'　'.repeat(c.depth) + c.name" /></el-select></el-form-item></el-form>
+      <template #footer><el-button @click="moveDialog=false">取消</el-button><el-button type="primary" :loading="busy" @click="saveMove">确认移动</el-button></template>
+    </el-dialog>
 </template>
 <style scoped>
 .list-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
@@ -117,5 +185,7 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
 .title-button:hover { color:var(--el-color-primary); }
 .category-form { max-width:620px; }
 .category-form > .el-button:first-child { margin-bottom:20px; }
+.category-select-row { display:flex; width:100%; align-items:center; gap:8px; }
+.category-select-row :deep(.el-select) { flex:1; }
 .el-alert { margin-bottom:16px; }
 </style>

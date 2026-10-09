@@ -11,7 +11,7 @@ const error = ref("");
 const file = ref<File | null>(null);
 const fileInput = ref<HTMLInputElement>();
 const categories = ref<{ id:number; name:string }[]>([]);
-const form = reactive({ name: "", description: "", instructions: "", summary: "", version: "1.0.0", publish: false, content_category_id: 0 });
+const form = reactive({ name: "", description: "", instructions: "", summary: "", tags: "", version: "1.0.0", publish: false, content_category_id: 0 });
 const ready = computed(() => {
   const contentReady = mode.value === "upload" ? !!file.value : /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.name) && !!form.description.trim() && !!form.instructions.trim() && !!form.summary.trim();
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,39}$/.test(form.version) && contentReady && form.content_category_id > 0;
@@ -30,16 +30,18 @@ async function save() {
   busy.value = true;
   error.value = "";
   try {
+    const tags = form.tags.split(/[,，]/).map(value => value.trim()).filter(Boolean);
     if (mode.value === "upload" && file.value) {
       const data = new FormData();
       data.append("archive", file.value);
       data.append("version", form.version);
       data.append("summary", form.summary);
       data.append("publish", String(form.publish)); data.append("content_category_id", String(form.content_category_id));
+      tags.forEach(tag => data.append('tags', tag));
       await api.post("/skills/upload", data);
-    } else { await api.post("/skills", form); }
+    } else { await api.post("/skills", { ...form, tags }); }
     ElMessage.success(form.publish ? (auth.isAdmin ? "Skill 已发布，可通过公开 URL 安装" : "Skill 已提交审核，通过后将公开发布") : "Skill 已保存为草稿");
-    Object.assign(form, { name: "", description: "", instructions: "", summary: "", version: "1.0.0", publish: false, content_category_id: 0 });
+    Object.assign(form, { name: "", description: "", instructions: "", summary: "", tags: "", version: "1.0.0", publish: false, content_category_id: 0 });
     file.value = null;
     if (fileInput.value) fileInput.value.value = "";
     emit("saved");
@@ -62,6 +64,7 @@ onMounted(async () => { try { categories.value = (await api.get<{id:number;name:
     </template>
     <el-form-item :label="mode === 'upload' ? '简要说明（选填，默认使用包内 description）' : '简要说明'"><el-input v-model="form.summary" type="textarea" :rows="2" maxlength="2000" show-word-limit placeholder="用一两句话说明这个 Skill 能帮助用户做什么" /></el-form-item>
     <el-form-item label="内容分区"><el-select v-model="form.content_category_id" placeholder="请选择分区"><el-option v-for="category in categories" :key="category.id" :value="category.id" :label="category.name" /></el-select></el-form-item>
+    <el-form-item label="标签"><el-input v-model="form.tags" aria-label="技能标签" placeholder="用逗号分隔，最多 12 个，每个不超过 40 字" /></el-form-item>
     <el-form-item label="版本"><el-input v-model="form.version" maxlength="40" placeholder="1.0.0" /></el-form-item>
     <el-checkbox v-model="form.publish">{{ auth.isAdmin ? "保存后立即公开发布，允许外部免登录下载" : "保存后提交审核，通过后允许外部免登录下载" }}</el-checkbox>
     <p v-if="error" class="error" role="alert">{{ error }}</p>

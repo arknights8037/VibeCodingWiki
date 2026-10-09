@@ -4,6 +4,7 @@ import enum
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     DateTime,
@@ -228,6 +229,7 @@ class SkillPackage(Base):
     slug: Mapped[str] = mapped_column(String(100), index=True)
     name: Mapped[str] = mapped_column(String(100))
     summary: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     version: Mapped[str] = mapped_column(String(40))
     license_name: Mapped[str | None] = mapped_column(String(100))
     compatibility: Mapped[str | None] = mapped_column(String(500))
@@ -252,6 +254,9 @@ class MCPSettings(Base):
     github_client_secret: Mapped[str | None] = mapped_column(String(300), nullable=True)
     gitee_client_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     gitee_client_secret: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ai_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    ai_api_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 

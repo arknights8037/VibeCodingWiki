@@ -16,9 +16,12 @@ async def test_standalone_and_atomic_directory_moves(client):
     category = (await client.post('/api/v1/admin/courses', headers=headers, json=dict(title='Category', slug='move-category', difficulty='advanced', order_index=99, lessons=[dict(title='A', slug='move-a', order_index=0),dict(title='B', slug='move-b', order_index=1)]))).json()
     path = f"/api/v1/admin/courses/{category['id']}/move"
     assert (await client.post(path, json={'offset': -1})).status_code == 403
+    before = [c['id'] for c in (await client.get('/api/v1/admin/courses')).json() if c['difficulty'] == 'advanced']
     assert (await client.post(path, json={'offset': -1}, headers=headers)).status_code == 200
-    rows = [c for c in (await client.get('/api/v1/admin/courses')).json() if c['difficulty'] == 'advanced']
-    assert [c['id'] for c in rows] == [category['id'], root['id']]
+    after = [c['id'] for c in (await client.get('/api/v1/admin/courses')).json() if c['difficulty'] == 'advanced']
+    assert after.index(category['id']) == before.index(category['id']) - 1
+    while (await client.post(path, json={'offset': -1}, headers=headers)).status_code == 200:
+        pass
     assert (await client.post(path, json={'offset': -1}, headers=headers)).status_code == 409
     lesson_path = f"/api/v1/admin/lessons/{category['lessons'][1]['id']}/move"
     assert (await client.post(lesson_path, json={'offset': -1}, headers=headers)).status_code == 200

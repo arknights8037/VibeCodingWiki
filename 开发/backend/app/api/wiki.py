@@ -69,13 +69,17 @@ async def search_wiki(
 
 @router.get("/categories", response_model=list[CategoryOut])
 async def list_categories(session: AsyncSession = Depends(get_session)) -> list[Category]:
-    return list(
-        await session.scalars(
-            select(Category)
-            .where(Category.articles.any(WikiArticle.status == PublicationStatus.published))
-            .order_by(Category.name)
-        )
-    )
+    categories = list(await session.scalars(select(Category).order_by(Category.order_index, Category.id)))
+    visible = set(await session.scalars(
+        select(WikiArticle.category_id).where(WikiArticle.status == PublicationStatus.published).distinct()
+    ))
+    by_id = {category.id: category for category in categories}
+    for category_id in list(visible):
+        parent_id = by_id[category_id].parent_id
+        while parent_id is not None and parent_id not in visible:
+            visible.add(parent_id)
+            parent_id = by_id[parent_id].parent_id
+    return [category for category in categories if category.id in visible]
 
 
 @router.get("/{slug}", response_model=WikiDetail)

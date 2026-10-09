@@ -5,14 +5,19 @@ from typing import Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.database import SessionLocal
+from app.mcp_catalog import ADMIN_MCP_TOOLS, PUBLIC_MCP_TOOLS
 from app.models import (
+    Category,
     Course,
+    Difficulty,
     Lesson,
     MCPSettings,
+    MCPToolSetting,
     ProjectSubmission,
     PublicationStatus,
     Role,
@@ -23,8 +28,50 @@ from app.models import (
 from app.services.block_content import normalize_content_json
 from app.services.search import search_wiki_articles
 
-mcp = MCPServer("VibeCodingWiki")
-admin_mcp = MCPServer("VibeCodingWiki Admin")
+
+class ConfigurableMCPServer(MCPServer):
+    """MCPServer that applies the administrator's per-tool exposure switches."""
+
+    def __init__(self, *args, managed_tool_names: set[str], **kwargs):
+        super().__init__(*args, **kwargs)
+        self.managed_tool_names = frozenset(managed_tool_names)
+
+    async def _enabled_tool_names(self) -> set[str]:
+        async with SessionLocal() as session:
+            rows = await session.scalars(
+                select(MCPToolSetting).where(MCPToolSetting.name.in_(self.managed_tool_names))
+            )
+            disabled = {row.name for row in rows if not row.enabled}
+        # A newly added tool remains available until its settings row is created by
+        # the admin settings endpoint. This keeps startup and migrations backwards compatible.
+        return set(self.managed_tool_names) - disabled
+
+    async def list_tools(self):
+        enabled = await self._enabled_tool_names()
+        tools = await super().list_tools()
+        return [tool for tool in tools if tool.name not in self.managed_tool_names or tool.name in enabled]
+
+    async def call_tool(self, name, arguments, context=None):
+        if name in self.managed_tool_names and name not in await self._enabled_tool_names():
+            raise ToolError(f"MCP 工具已停用：{name}")
+        return await super().call_tool(name, arguments, context)
+
+
+mcp = ConfigurableMCPServer("VibeCodingWiki", managed_tool_names=set(PUBLIC_MCP_TOOLS))
+admin_mcp = ConfigurableMCPServer("VibeCodingWiki Admin", managed_tool_names=set(ADMIN_MCP_TOOLS))
+
+
+async def _admin_session(ctx: Context | None):
+    """Open a session and authenticate an administrator MCP request."""
+    if ctx is None:
+        raise PermissionError("管理员 MCP 工具需要 HTTP 凭证")
+    session = SessionLocal()
+    try:
+        admin = await _require_admin_credential(ctx, session)
+        return session, admin
+    except Exception:
+        await session.close()
+        raise
 
 
 @mcp.tool()
@@ -55,6 +102,27 @@ async def get_wiki_article(slug: str) -> dict:
             "body_markdown": article.body_markdown,
             "content_json": article.content_json,
         }
+
+
+@mcp.tool()
+async def list_wiki_categories() -> list[dict]:
+    """List Wiki categories containing published articles."""
+    async with SessionLocal() as session:
+        categories = await session.scalars(
+            select(Category)
+            .where(Category.articles.any(WikiArticle.status == PublicationStatus.published))
+            .order_by(Category.order_index, Category.name)
+        )
+        return [
+            {
+                "id": item.id,
+                "slug": item.slug,
+                "name": item.name,
+                "parent_id": item.parent_id,
+                "order_index": item.order_index,
+            }
+            for item in categories
+        ]
 
 
 @mcp.tool()
@@ -181,15 +249,13 @@ async def update_wiki_article(
     title: str | None = None,
     summary: str | None = None,
     body_markdown: str | None = None,
-    content_json: str | None = None,
+    content_json: str | dict | None = None,
     status: Literal["draft", "published"] | None = None,
     ctx: Context | None = None,
 ) -> dict:
     """Update an existing Wiki article using the administrator MCP credential."""
-    if ctx is None:
-        raise PermissionError("管理员 MCP 工具需要 HTTP 凭证")
-    async with SessionLocal() as session:
-        admin = await _require_admin_credential(ctx, session)
+    session, admin = await _admin_session(ctx)
+    async with session:
         article = await session.scalar(
             select(WikiArticle)
             .where(WikiArticle.slug == slug)
@@ -211,7 +277,7 @@ async def update_wiki_article(
             article.body_markdown = body_markdown
             article.content_json = normalize_content_json(content_json, body_markdown)
         elif content_json is not None:
-            article.content_json = content_json
+            article.content_json = normalize_content_json(content_json, article.body_markdown)
         if status is not None:
             article.status = PublicationStatus(status)
         article.version += 1
@@ -238,12 +304,184 @@ async def update_wiki_article(
 
 
 @admin_mcp.tool()
+async def create_wiki_article(
+    slug: str,
+    title: str,
+    summary: str,
+    body_markdown: str,
+    category: str,
+    category_id: int | None = None,
+    tags: list[str] | None = None,
+    difficulty: Literal["beginner", "intermediate", "advanced"] = "beginner",
+    order_index: int = 0,
+    status: Literal["draft", "published"] = "draft",
+    content_json: str | None = None,
+    ctx: Context | None = None,
+) -> dict:
+    """Create a Wiki article using the administrator MCP credential."""
+    session, admin = await _admin_session(ctx)
+    async with session:
+        if await session.scalar(select(WikiArticle.id).where(WikiArticle.slug == slug)):
+            raise ValueError("词条标识已存在")
+        if not 2 <= len(title.strip()) <= 180 or not 10 <= len(summary.strip()) <= 500:
+            raise ValueError("标题或摘要长度不符合要求")
+        if len(body_markdown.strip()) < 20 or len(body_markdown) > 50000:
+            raise ValueError("正文长度必须为 20–50000 个字符")
+        if order_index < 0:
+            raise ValueError("排序值不能为负数")
+        from app.api.admin import resolve_category_and_tags, write_audit
+
+        category_obj, tag_objs = await resolve_category_and_tags(
+            session, category, tags or [], category_id
+        )
+        article = WikiArticle(
+            slug=slug,
+            title=title.strip(),
+            summary=summary.strip(),
+            body_markdown=body_markdown,
+            content_json=normalize_content_json(content_json, body_markdown),
+            difficulty=Difficulty(difficulty),
+            status=PublicationStatus(status),
+            category=category_obj,
+            tags=tag_objs,
+            order_index=order_index,
+        )
+        session.add(article)
+        await session.flush()
+        await write_audit(session, admin, "wiki.create.mcp", "wiki", str(article.id), {"slug": slug})
+        await session.commit()
+        return {"id": article.id, "slug": article.slug, "title": article.title, "status": article.status.value}
+
+
+@admin_mcp.tool()
+async def delete_wiki_article(slug: str, ctx: Context | None = None) -> dict:
+    """Delete a Wiki article using the administrator MCP credential."""
+    session, admin = await _admin_session(ctx)
+    async with session:
+        article = await session.scalar(select(WikiArticle).where(WikiArticle.slug == slug))
+        if not article:
+            raise ValueError("词条不存在")
+        article_id = article.id
+        await session.delete(article)
+        from app.api.admin import write_audit
+
+        await write_audit(session, admin, "wiki.delete.mcp", "wiki", str(article_id), {"slug": slug})
+        await session.commit()
+        return {"deleted": True, "id": article_id, "slug": slug}
+
+
+@admin_mcp.tool()
+async def move_wiki_article(slug: str, offset: Literal[-1, 1], ctx: Context | None = None) -> dict:
+    """Move a Wiki article within its category using the administrator MCP credential."""
+    session, admin = await _admin_session(ctx)
+    async with session:
+        article = await session.scalar(select(WikiArticle).where(WikiArticle.slug == slug))
+        if not article:
+            raise ValueError("词条不存在")
+        siblings = list(await session.scalars(select(WikiArticle).where(WikiArticle.category_id == article.category_id).order_by(WikiArticle.order_index, WikiArticle.id)))
+        index = next(i for i, item in enumerate(siblings) if item.id == article.id)
+        target = index + offset
+        if target < 0 or target >= len(siblings):
+            raise ValueError("已在该分类边界")
+        siblings[index], siblings[target] = siblings[target], siblings[index]
+        for position, item in enumerate(siblings):
+            item.order_index = position
+        from app.api.admin import write_audit
+
+        await write_audit(session, admin, "wiki.move.mcp", "wiki", str(article.id), {"offset": offset})
+        await session.commit()
+        return {"slug": slug, "order_index": article.order_index}
+
+
+@admin_mcp.tool()
+async def create_wiki_category(
+    slug: str,
+    name: str,
+    parent_id: int | None = None,
+    order_index: int = 0,
+    ctx: Context | None = None,
+) -> dict:
+    """Create a Wiki category using the administrator MCP credential."""
+    session, admin = await _admin_session(ctx)
+    async with session:
+        if await session.scalar(select(Category.id).where((Category.slug == slug) | (Category.name == name))):
+            raise ValueError("分类标识或名称已存在")
+        if parent_id is not None and not await session.get(Category, parent_id):
+            raise ValueError("父级分类不存在")
+        category = Category(slug=slug, name=name.strip(), parent_id=parent_id, order_index=max(0, order_index))
+        session.add(category)
+        await session.flush()
+        from app.api.admin import write_audit
+
+        await write_audit(session, admin, "wiki.category.create.mcp", "wiki_category", str(category.id), {"slug": slug})
+        await session.commit()
+        return {"id": category.id, "slug": category.slug, "name": category.name, "parent_id": category.parent_id, "order_index": category.order_index}
+
+
+@admin_mcp.tool()
+async def update_wiki_category(
+    category_id: int,
+    slug: str,
+    name: str,
+    parent_id: int | None = None,
+    order_index: int = 0,
+    ctx: Context | None = None,
+) -> dict:
+    """Update a Wiki category using the administrator MCP credential."""
+    session, admin = await _admin_session(ctx)
+    async with session:
+        category = await session.get(Category, category_id)
+        if not category:
+            raise ValueError("分类不存在")
+        if parent_id == category_id or (parent_id is not None and not await session.get(Category, parent_id)):
+            raise ValueError("父级分类无效")
+        duplicate = await session.scalar(select(Category.id).where(((Category.slug == slug) | (Category.name == name)), Category.id != category_id))
+        if duplicate:
+            raise ValueError("分类标识或名称已存在")
+        category.slug, category.name, category.parent_id, category.order_index = slug, name.strip(), parent_id, max(0, order_index)
+        from app.api.admin import write_audit
+
+        await write_audit(session, admin, "wiki.category.update.mcp", "wiki_category", str(category_id), {"slug": slug})
+        await session.commit()
+        return {"id": category.id, "slug": category.slug, "name": category.name, "parent_id": category.parent_id, "order_index": category.order_index}
+
+
+@admin_mcp.tool()
+async def delete_wiki_category(category_id: int, ctx: Context | None = None) -> dict:
+    """Delete a Wiki category and its descendant articles using the administrator MCP credential."""
+    session, admin = await _admin_session(ctx)
+    async with session:
+        category = await session.get(Category, category_id)
+        if not category:
+            raise ValueError("分类不存在")
+        categories = list(await session.scalars(select(Category)))
+        children = {}
+        for item in categories:
+            children.setdefault(item.parent_id, []).append(item)
+        descendants, pending = [], [category]
+        while pending:
+            item = pending.pop()
+            descendants.append(item)
+            pending.extend(children.get(item.id, []))
+        ids = [item.id for item in descendants]
+        article_ids = list(await session.scalars(select(WikiArticle.id).where(WikiArticle.category_id.in_(ids))))
+        if article_ids:
+            await session.execute(WikiArticle.__table__.delete().where(WikiArticle.id.in_(article_ids)))
+        await session.execute(Category.__table__.delete().where(Category.id.in_(ids)))
+        from app.api.admin import write_audit
+
+        await write_audit(session, admin, "wiki.category.delete.mcp", "wiki_category", str(category_id), {"category_ids": ids, "article_ids": article_ids})
+        await session.commit()
+        return {"deleted": True, "category_ids": ids, "article_ids": article_ids}
+
+
+@admin_mcp.tool()
 async def update_lesson(
     slug: str,
     title: str | None = None,
     objective: str | None = None,
     body_markdown: str | None = None,
-    content_json: str | None = None,
+    content_json: str | dict | None = None,
     practice: str | None = None,
     completion_criteria: str | None = None,
     status: Literal["draft", "published", "archived"] | None = None,
@@ -267,7 +505,7 @@ async def update_lesson(
             lesson.body_markdown = body_markdown
             lesson.content_json = normalize_content_json(content_json, body_markdown)
         elif content_json is not None:
-            lesson.content_json = content_json
+            lesson.content_json = normalize_content_json(content_json, lesson.body_markdown)
         if practice is not None:
             lesson.practice = practice
         if completion_criteria is not None:

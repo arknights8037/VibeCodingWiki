@@ -10,7 +10,7 @@ async def test_public_content_is_seeded(client):
     courses = await client.get("/api/v1/courses")
     wiki = await client.get("/api/v1/wiki", params={"q": "Git"})
     skills = await client.get("/api/v1/skills")
-    assert courses.status_code == 200 and len(courses.json()) == 5
+    assert courses.status_code == 200 and len(courses.json()) == 9
     assert wiki.status_code == 200 and wiki.json()["total"] >= 1
     assert skills.status_code == 200 and skills.json()[0]["slug"] == "safe-wiki-research"
 

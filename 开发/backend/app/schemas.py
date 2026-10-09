@@ -218,10 +218,15 @@ class WikiWrite(BaseModel):
 
 
 class CategoryWrite(BaseModel):
-    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
+    slug: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
     name: str = Field(min_length=2, max_length=80)
     parent_id: int | None = None
     order_index: int = Field(default=0, ge=0)
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def blank_slug_is_optional(cls, value: str | None) -> str | None:
+        return value.strip() or None if isinstance(value, str) else value
 
 
 class AdminCategoryOut(CategoryOut):
@@ -258,6 +263,7 @@ class SkillOut(BaseModel):
     slug: str
     name: str
     summary: str
+    tags: list[str] = Field(default_factory=list)
     version: str
     license_name: str | None
     compatibility: str | None
@@ -281,6 +287,18 @@ class AdminSkillOut(SkillOut):
 
 class SkillIntroUpdate(BaseModel):
     summary: str = Field(min_length=1, max_length=2000)
+    tags: list[str] | None = Field(default=None, max_length=12)
+    content_category_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("tags")
+    @classmethod
+    def clean_skill_tags(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        result = list(dict.fromkeys(value.strip() for value in values))
+        if any(not value or len(value) > 40 for value in result):
+            raise ValueError("标签须为 1–40 个字符")
+        return result
 
     @field_validator("summary")
     @classmethod
@@ -290,7 +308,20 @@ class SkillIntroUpdate(BaseModel):
         return value.strip()
 
 
+class SkillContentUpdate(BaseModel):
+    """The editable instructions portion of a Skill's SKILL.md."""
+    body_markdown: str = Field(min_length=1, max_length=100000)
+
+    @field_validator("body_markdown")
+    @classmethod
+    def nonblank_body(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("说明内容不能为空")
+        return value.strip()
+
+
 class SkillCreate(SkillIntroUpdate):
+    tags: list[str] = Field(default_factory=list, max_length=12)
     name: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)
     description: str = Field(min_length=1, max_length=1024)
     instructions: str = Field(min_length=1, max_length=100000)
@@ -319,6 +350,16 @@ class MCPSettingsOut(BaseModel):
     enabled: bool
     auth_enabled: bool
     has_token: bool
+    public_endpoint: str = "/mcp"
+    admin_endpoint: str = "/mcp/admin"
+    resources: list["MCPResourceOut"] = Field(default_factory=list)
+
+
+class MCPResourceOut(BaseModel):
+    uri: str
+    description: str
+    scope: Literal["public", "admin"] = "public"
+    endpoint: str = "/mcp"
 
 
 class MCPSettingsWrite(BaseModel):
@@ -331,12 +372,19 @@ class OAuthSettingsOut(BaseModel):
     github_configured: bool = False
     gitee_client_id: str | None = None
     gitee_configured: bool = False
+    ai_base_url: str | None = None
+    ai_model: str | None = None
+    ai_configured: bool = False
+    ai_api_key_configured: bool = False
 
 class OAuthSettingsWrite(BaseModel):
     github_client_id: str | None = Field(default=None, max_length=200)
     github_client_secret: str | None = Field(default=None, max_length=300)
     gitee_client_id: str | None = Field(default=None, max_length=200)
     gitee_client_secret: str | None = Field(default=None, max_length=300)
+    ai_base_url: str | None = Field(default=None, max_length=500)
+    ai_model: str | None = Field(default=None, max_length=200)
+    ai_api_key: str | None = Field(default=None, max_length=500)
 
 
 class MCPToolOut(BaseModel):
@@ -344,6 +392,8 @@ class MCPToolOut(BaseModel):
     name: str
     description: str
     enabled: bool
+    scope: Literal["public", "admin"] = "public"
+    endpoint: str = "/mcp"
 
 
 class MCPToolUpdate(BaseModel):
@@ -368,7 +418,7 @@ class LessonWrite(BaseModel):
 
 
 class CourseWrite(BaseModel):
-    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=100)
+    slug: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=100)
     title: str = Field(min_length=1, max_length=160)
     summary: str = Field(default="", max_length=10000)
     prerequisites: str = Field(default="无", max_length=10000)
@@ -378,6 +428,11 @@ class CourseWrite(BaseModel):
     is_standalone: bool = False
     directory_collapsible: bool = True
     lessons: list[LessonWrite] = Field(default_factory=list, max_length=200)
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def blank_slug_is_optional(cls, value: str | None) -> str | None:
+        return value.strip() or None if isinstance(value, str) else value
 
 
 class AdminLessonOut(LessonOut):
