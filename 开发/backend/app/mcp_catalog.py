@@ -20,6 +20,7 @@ ADMIN_MCP_TOOLS = {
     "delete_wiki_category": "删除 Wiki 分类及其内容",
     "update_lesson": "修改课程课文",
     "update_course": "修改课程信息",
+    "replace_course_directory": "按层级替换课程目录（不写入正文）",
 }
 
 MCP_TOOL_CATALOG = {**PUBLIC_MCP_TOOLS, **ADMIN_MCP_TOOLS}

@@ -13,7 +13,7 @@ const filters = reactive({
   tags: "",
   difficulty: "",
   updated_after: "",
-  sort: "relevance",
+  sort: "order_asc",
   page: 1,
 });
 const categories = ref<{ slug: string; name: string }[]>([]);
@@ -21,7 +21,7 @@ const articles = ref<WikiArticle[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const error = ref("");
-const pageSize = 10;
+const pageSize = 50;
 const lifecycle = new AbortController();
 let searchVersion = 0;
 
@@ -148,6 +148,7 @@ onBeforeUnmount(() => lifecycle.abort());
         <option value="advanced">高级</option>
       </select>
       <select v-model="filters.sort" aria-label="排序">
+        <option value="order_asc">目录顺序</option>
         <option value="relevance">相关度</option>
         <option value="updated_desc">最近更新</option>
         <option value="title_asc">标题</option>

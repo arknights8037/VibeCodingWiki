@@ -80,15 +80,27 @@ async function load(more = false) {
       courses.value = data;
       result = data.map(c => ({title:c.title, href:`/courses/${c.slug}`, level:c.difficulty, prefix:String(c.order_index).padStart(2,'0')}));
     } else if (current === 'wiki') {
-      const [response, categories] = await Promise.all([
-        api.get<{items:WikiArticle[]; total:number}>('/wiki', {params:{page:nextPage,page_size:50,sort:'title_asc'}}),
-        more ? Promise.resolve({data:wikiCategories.value}) : api.get<typeof wikiCategories.value>('/wiki/categories'),
+      const categoriesRequest = more
+        ? Promise.resolve({data:wikiCategories.value})
+        : api.get<typeof wikiCategories.value>('/wiki/categories');
+      const [firstResponse, categories] = await Promise.all([
+        api.get<{items:WikiArticle[]; total:number}>('/wiki', {params:{page:nextPage,page_size:50,sort:'order_asc'}}),
+        categoriesRequest,
       ]);
       if (id !== requestId) return;
       wikiCategories.value = categories.data;
-      const data = response.data;
-      result = data.items.map(a => ({title:a.title,href:`/wiki/${a.slug}`,prefix:'▤',categoryId:a.category.id}));
-      remaining = nextPage * 50 < data.total;
+      const allItems = [...firstResponse.data.items];
+      const total = firstResponse.data.total;
+      let fetchPage = nextPage + 1;
+      while (allItems.length < total) {
+        const response = await api.get<{items:WikiArticle[]; total:number}>('/wiki', {params:{page:fetchPage,page_size:50,sort:'order_asc'}});
+        if (id !== requestId) return;
+        if (!response.data.items.length) break;
+        allItems.push(...response.data.items);
+        fetchPage += 1;
+      }
+      result = allItems.map(a => ({title:a.title,href:`/wiki/${a.slug}`,prefix:'▤',categoryId:a.category.id}));
+      remaining = false;
     } else if (current === 'projects') {
       result = (await api.get<Project[]>('/projects')).data.map(p => ({title:p.name,href:`/projects/${p.slug}`,prefix:'◇'}));
     } else if (current === 'skills') {

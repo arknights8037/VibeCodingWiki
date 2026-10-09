@@ -210,6 +210,47 @@ function toggleRowPublication(row: DirectoryRow) {
   const course = catalog.value.find(item => item.id === row.courseId);
   if (course) void togglePublication(course, row.index);
 }
+async function publishCategory(course: Draft) {
+  if (saving.value || course.is_standalone || !course.id) return;
+  if (!course.title.trim() || !course.slug || course.lessons.some(item => !item.title.trim() || !item.slug)) {
+    ElMessage.warning('请先补全分类和所有条目的标题、英文标识');
+    return;
+  }
+  const invalidIndex = course.lessons.findIndex(item => slugError(item.slug));
+  if (invalidIndex >= 0) {
+    ElMessage.warning(`条目“${course.lessons[invalidIndex]!.title}”：${slugError(course.lessons[invalidIndex]!.slug)}`);
+    return;
+  }
+  if (slugError(course.slug)) {
+    ElMessage.warning(`分类标识：${slugError(course.slug)}`);
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将发布“${course.title}”及其 ${course.lessons.length} 个条目，发布后会立即显示在前台课程目录。`,
+      '发布整个分类',
+      { confirmButtonText: '发布整个分类', cancelButtonText: '暂不发布', type: 'info' },
+    );
+  } catch { return; }
+  saving.value = true; error.value = '';
+  const payload = JSON.parse(JSON.stringify(course)) as Draft;
+  payload.status = 'published';
+  payload.lessons.forEach((item, index) => { item.status = 'published'; item.order_index = index; });
+  try {
+    const response = await api.put<Draft>(`/admin/courses/${payload.id}`, payload);
+    if (draft.value?.id === payload.id) {
+      draft.value = response.data;
+      saved.value = JSON.stringify(response.data);
+    }
+    await load();
+    ElMessage.success('分类及其全部条目已发布');
+  } catch (reason) { error.value = apiError(reason); }
+  finally { saving.value = false; }
+}
+function toggleRowCategoryPublication(row: DirectoryRow) {
+  const course = catalog.value.find(item => item.id === row.courseId);
+  if (course && course.status !== 'published') void publishCategory(course);
+}
 function normalizeSlug(value: string) {
   return value.trim().toLowerCase().replace(/[\s_]+/g, '-');
 }
@@ -241,15 +282,15 @@ async function save(publish = false) {
   }
   saving.value = true; error.value = '';
   const payload = JSON.parse(JSON.stringify(draft.value)) as Draft;
-  if (publish && payload.is_standalone && payload.lessons[0]) {
+  if (publish) {
     payload.status = 'published';
-    payload.lessons[0].status = 'published';
+    payload.lessons.forEach(item => item.status = 'published');
   }
   payload.lessons.forEach((item, index) => item.order_index = index);
   try {
     const response = payload.id ? await api.put<Draft>(`/admin/courses/${payload.id}`, payload) : await api.post<Draft>('/admin/courses', payload);
     draft.value = response.data; saved.value = JSON.stringify(response.data);
-    await load(); ElMessage.success('课程已保存');
+    await load(); ElMessage.success(publish && !payload.is_standalone ? '分类及其全部条目已发布' : publish ? '课程已保存并发布' : '课程已保存');
   } catch (reason) { error.value = apiError(reason); }
   finally { saving.value = false; }
 }
@@ -271,10 +312,11 @@ async function save(publish = false) {
         <el-table-column label="类型" width="80"><template #default="{ row }">{{ row.index === -1 ? '分类' : '条目' }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag size="small" :type="row.status === 'published' ? 'success' : 'info'">{{ statusName(row.status) }}</el-tag></template></el-table-column>
         <el-table-column label="操作" min-width="470">
-          <template #default="{ row }"><div class="directory-row-actions">
+          <template #default="{ row }"><div class="directory-row-actions" :class="{ 'category-row-actions': row.index === -1 }">
             <el-button :icon="FolderOpened" v-if="row.index === -1" @click="openRow(row)">管理分类</el-button>
             <el-button :icon="Plus" class="action-add" v-if="row.index === -1" @click="openRow(row, true)">新增条目</el-button>
-            <el-button :icon="EditPen" class="action-edit" v-else @click="openRow(row)">编辑内容</el-button>
+            <el-button v-if="row.index === -1 && row.status !== 'published'" class="action-category-publish" :icon="Upload" type="success" plain :disabled="saving" @click="toggleRowCategoryPublication(row)">发布整个分类</el-button>
+            <el-button :icon="EditPen" class="action-edit" v-if="row.index >= 0" @click="openRow(row)">编辑内容</el-button>
             <el-button v-if="row.index >= 0" class="action-publish" :icon="row.status === 'published' ? Download : Upload" :type="row.status === 'published' ? 'warning' : 'success'" plain :disabled="saving" @click="toggleRowPublication(row)">{{ row.status === 'published' ? '设为未发表' : '发布' }}</el-button>
             <el-button :icon="ArrowUp" class="action-up" :disabled="!canMoveRow(row, -1)" @click="moveRow(row, -1)">上移</el-button><el-button :icon="ArrowDown" :disabled="!canMoveRow(row, 1)" @click="moveRow(row, 1)">下移</el-button>
             <el-button :icon="Delete" type="danger" plain :disabled="saving" @click="removeRow(row)">移除</el-button>
@@ -286,8 +328,11 @@ async function save(publish = false) {
       <div v-if="active === -1" class="content-edit-layout category-management-layout">
         <section class="category-entries" aria-label="分类条目管理">
           <div class="category-list-header">
-            <div><h2>{{ draft.title || '新分类' }}</h2><span>{{ draft.lessons.length }} 个条目</span><p class="category-list-helper">先整理条目，再在右侧设置分类信息</p></div>
-            <el-button :icon="Plus" type="primary" plain :disabled="saving" @click="addLesson">新增条目</el-button>
+            <div><h2>{{ draft.title || '新分类' }}</h2><span>{{ draft.lessons.length }} 个条目</span><p class="category-list-helper">发布整个分类会同时发布这里的全部条目</p></div>
+            <div class="category-header-actions">
+              <el-button v-if="draft.status !== 'published'" :icon="Upload" type="success" plain :disabled="saving" @click="save(true)">发布整个分类</el-button>
+              <el-button :icon="Plus" type="primary" plain :disabled="saving" @click="addLesson">新增条目</el-button>
+            </div>
           </div>
           <div class="category-list-filters">
             <el-input v-model="entryQuery" :prefix-icon="Search" clearable aria-label="查找分类条目" placeholder="查找标题或英文标识" />
@@ -310,6 +355,7 @@ async function save(publish = false) {
           <div class="properties-actions">
             <el-button :icon="Back" :disabled="saving" @click="backToList">返回列表</el-button>
             <el-button :icon="DocumentChecked" type="primary" :loading="saving" @click="save()">保存课程</el-button>
+            <el-button v-if="draft.status !== 'published'" class="publish-category-button" :icon="Upload" type="success" :loading="saving" @click="save(true)">发布整个分类</el-button>
             <span class="properties-save-state" role="status">{{ dirty ? '有未保存的修改（含条目排序）' : '已保存' }}</span>
           </div>
           <el-scrollbar class="properties-scroll" max-height="calc(100dvh - 220px)">
@@ -370,6 +416,7 @@ async function save(publish = false) {
 .category-management-layout { grid-template-columns:minmax(0,1fr) 340px; gap:24px; align-items:start; }
 .category-list-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
 .category-list-header > div { min-width:0; }
+.category-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-shrink:0; }
 .category-list-helper { margin:4px 0 0; color:#9a968b; font-size:11px; }
 .category-list-header h2 { margin:0 0 4px; font-size:18px; line-height:1.5; overflow-wrap:anywhere; }
 .category-list-header span, .entry-slug { font-size:11px; color:#8a877e; }
@@ -387,6 +434,7 @@ async function save(publish = false) {
 .content-properties { min-width:0; border:1px solid #e5e5e2; border-radius:6px; background:#fafaf8; position:sticky; top:82px; }
 .properties-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px; border-bottom:1px solid #e5e5e2; }
 .properties-actions .el-button { margin:0; padding:8px; }
+.properties-actions .publish-category-button { grid-column:1 / -1; font-weight:600; }
 .properties-save-state { grid-column:1 / -1; font-size:11px; color:#827d70; }
 .properties-form { padding:16px 14px; }
 .category-management-layout .properties-form { padding-top:18px; }
@@ -409,6 +457,8 @@ async function save(publish = false) {
 }
 
 .directory-row-actions { display:grid; grid-template-columns:100px 100px 70px 70px 70px; gap:6px; align-items:center; }
+.category-row-actions { display:flex; flex-wrap:wrap; }
+.category-row-actions .action-category-publish { font-weight:600; }
 .directory-row-actions .action-publish { grid-column:2; grid-row:1; }
 .directory-row-actions .action-add { grid-column:2; grid-row:1; }
 .directory-row-actions .action-edit { grid-column:1; grid-row:1; }
@@ -427,5 +477,5 @@ async function save(publish = false) {
 .course-form-row { display:flex; gap:16px; flex-wrap:wrap; }
 .course-form-row .el-form-item { flex:1; min-width:140px; }
 .course-dirty { color:#8a7954; font-size:12px; }
-@media(max-width:600px) { .course-editor-actions .el-breadcrumb { flex-basis:100%; order:-1; } }
+@media(max-width:600px) { .course-editor-actions .el-breadcrumb { flex-basis:100%; order:-1; } .category-list-header { flex-wrap:wrap; } .category-header-actions { width:100%; justify-content:flex-start; } }
 </style>

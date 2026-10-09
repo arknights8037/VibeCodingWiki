@@ -66,7 +66,13 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(detail || `AI 服务请求失败（${response.status}）。`);
 }
 
-/** Consume OpenAI-compatible non-streaming JSON or SSE Chat Completions. */
+/** Consume an OpenAI-compatible Chat Completion.
+ *
+ * The editor needs the complete tool-call message before it can execute a
+ * read/write operation. Some thinking providers emit reasoning-only SSE
+ * chunks before the tool call and their proxy responses can omit the final
+ * tool-call frame, so request the complete JSON message here.
+ */
 export function createAdminAiCompletion(): MicroCompletion {
   return async (messages, signal, onDelta) => {
     const response = await fetch(completionUrl(), {
@@ -82,7 +88,7 @@ export function createAdminAiCompletion(): MicroCompletion {
         messages,
         tools: MICRO_AGENT_TOOLS,
         tool_choice: 'auto',
-        stream: true,
+        stream: false,
       }),
     });
     if (!response.ok) throw await responseError(response);

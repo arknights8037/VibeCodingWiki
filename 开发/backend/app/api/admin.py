@@ -714,7 +714,12 @@ async def ai_completion(
         "Accept": "text/event-stream" if stream else "application/json",
         **({"Authorization": f"Bearer {row.ai_api_key}"} if row.ai_api_key else {}),
     }
-    client = httpx.AsyncClient(timeout=60, follow_redirects=False)
+    # The configured model endpoint is contacted directly. In particular, do
+    # not inherit the process-wide proxy variables: a developer machine may
+    # advertise a SOCKS proxy without having httpx's optional socksio
+    # dependency installed, which otherwise raises ImportError and turns a
+    # perfectly valid model request into an opaque 500 response.
+    client = httpx.AsyncClient(timeout=60, follow_redirects=False, trust_env=False)
     try:
         upstream = await client.send(
             client.build_request("POST", _ai_completion_url(row.ai_base_url), json=payload, headers=headers),

@@ -579,6 +579,114 @@ async def update_course(
         }
 
 
+@admin_mcp.tool()
+async def replace_course_directory(
+    directory: list[dict],
+    archive_existing: bool = True,
+    ctx: Context | None = None,
+) -> dict:
+    """Replace the course directory with empty draft courses and lessons.
+
+    Each directory item must contain ``slug``, ``title``, ``difficulty`` and a
+    ``lessons`` list. Each lesson must contain ``slug`` and ``title``. This
+    deliberately writes directory metadata only; all lesson content fields are
+    cleared so editors can fill them later.
+    """
+    session, admin = await _admin_session(ctx)
+    allowed_difficulties = {"beginner", "intermediate", "advanced"}
+    async with session:
+        if not directory:
+            raise ValueError("课程目录不能为空")
+        course_slugs: set[str] = set()
+        lesson_slugs: set[str] = set()
+        for item in directory:
+            if not isinstance(item, dict):
+                raise ValueError("课程目录项格式无效")
+            slug = str(item.get("slug", "")).strip()
+            title = str(item.get("title", "")).strip()
+            difficulty = str(item.get("difficulty", "")).strip()
+            lessons = item.get("lessons")
+            if not slug or not title or difficulty not in allowed_difficulties or not isinstance(lessons, list):
+                raise ValueError("课程目录项必须包含 slug、title、difficulty 和 lessons")
+            if slug in course_slugs:
+                raise ValueError(f"课程标识重复：{slug}")
+            course_slugs.add(slug)
+            for lesson_item in lessons:
+                if not isinstance(lesson_item, dict):
+                    raise ValueError("课文目录项格式无效")
+                lesson_slug = str(lesson_item.get("slug", "")).strip()
+                lesson_title = str(lesson_item.get("title", "")).strip()
+                if not lesson_slug or not lesson_title:
+                    raise ValueError("课文目录项必须包含 slug 和 title")
+                if lesson_slug in lesson_slugs:
+                    raise ValueError(f"课文标识重复：{lesson_slug}")
+                lesson_slugs.add(lesson_slug)
+
+        if archive_existing:
+            await session.execute(
+                Lesson.__table__.update().values(status=PublicationStatus.archived)
+            )
+            await session.execute(
+                Course.__table__.update().values(status=PublicationStatus.archived)
+            )
+
+        for course_order, item in enumerate(directory, start=1):
+            course = await session.scalar(select(Course).where(Course.slug == item["slug"]))
+            if course is None:
+                course = Course(
+                    slug=item["slug"],
+                    title=item["title"].strip(),
+                    summary="",
+                    prerequisites="无",
+                )
+                session.add(course)
+                await session.flush()
+            course.title = item["title"].strip()
+            course.summary = ""
+            course.prerequisites = "无"
+            course.difficulty = Difficulty(item["difficulty"])
+            course.order_index = course_order
+            course.status = PublicationStatus.draft
+            course.is_standalone = False
+            course.directory_collapsible = True
+
+            for lesson_order, lesson_item in enumerate(item["lessons"], start=1):
+                lesson = await session.scalar(
+                    select(Lesson).where(Lesson.slug == lesson_item["slug"])
+                )
+                if lesson is None:
+                    lesson = Lesson(course_id=course.id, slug=lesson_item["slug"])
+                    session.add(lesson)
+                lesson.course_id = course.id
+                lesson.title = lesson_item["title"].strip()
+                lesson.objective = ""
+                lesson.body_markdown = ""
+                lesson.content_json = ""
+                lesson.practice = ""
+                lesson.completion_criteria = ""
+                lesson.estimated_minutes = 30
+                lesson.order_index = lesson_order
+                lesson.status = PublicationStatus.draft
+
+        from app.api.admin import write_audit
+
+        await write_audit(
+            session,
+            admin,
+            "course.directory.replace.mcp",
+            "course_directory",
+            "all",
+            {"course_count": len(directory), "lesson_count": len(lesson_slugs)},
+        )
+        await session.commit()
+        return {
+            "course_count": len(directory),
+            "lesson_count": len(lesson_slugs),
+            "archived_existing": archive_existing,
+            "status": "draft",
+        }
+
+
 @mcp.resource("wiki://articles/{slug}")
 async def wiki_resource(slug: str) -> str:
     """Return a published Wiki article as Markdown."""

@@ -10,6 +10,7 @@ from app.database import get_session
 from app.models import Category, Difficulty, PublicationStatus, WikiArticle
 from app.schemas import CategoryOut, Page, WikiDetail, WikiSummary
 from app.services.search import search_wiki_articles
+from app.services.wiki_summary import display_wiki_summary
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
 
@@ -27,11 +28,29 @@ async def list_terms(
     """Live, lightweight index for automatic course annotations; no pagination."""
     response.headers["Cache-Control"] = "no-store"
     rows = await session.execute(
-        select(WikiArticle.slug, WikiArticle.title, WikiArticle.summary)
+        select(WikiArticle.slug, WikiArticle.title, WikiArticle.summary, WikiArticle.body_markdown)
         .where(WikiArticle.status == PublicationStatus.published)
         .order_by(WikiArticle.id)
     )
-    return [WikiTerm(slug=row.slug, title=row.title, summary=row.summary) for row in rows]
+    # A title is the key used by the course annotator. Keep the first
+    # published article as the stable canonical definition when legacy seed
+    # data contains the same title in more than one category.
+    terms: list[WikiTerm] = []
+    seen_titles: set[str] = set()
+    for row in rows:
+        title = row.title.strip()
+        key = title.casefold()
+        if not title or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        terms.append(
+            WikiTerm(
+                slug=row.slug,
+                title=title,
+                summary=display_wiki_summary(row.summary, row.body_markdown),
+            )
+        )
+    return terms
 
 
 @router.get("", response_model=Page)
@@ -42,7 +61,7 @@ async def search_wiki(
     tags: list[str] = Query(default=[]),
     difficulty: Difficulty | None = None,
     updated_after: datetime | None = None,
-    sort: str = Query(default="relevance", pattern=r"^(relevance|updated_desc|title_asc)$"),
+    sort: str = Query(default="relevance", pattern=r"^(relevance|order_asc|updated_desc|title_asc)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=50),
     session: AsyncSession = Depends(get_session),

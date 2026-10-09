@@ -96,7 +96,9 @@ async def search_wiki_articles(
     count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
     total = int(await session.scalar(count_statement) or 0)
 
-    if sort == "updated_desc":
+    if sort == "order_asc":
+        statement = statement.order_by(WikiArticle.order_index.asc(), WikiArticle.id.asc())
+    elif sort == "updated_desc":
         statement = statement.order_by(WikiArticle.updated_at.desc(), WikiArticle.id)
     elif sort == "title_asc":
         statement = statement.order_by(WikiArticle.title.asc(), WikiArticle.id)
