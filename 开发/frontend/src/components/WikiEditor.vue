@@ -27,12 +27,29 @@ const categoryLoading = ref(false);
 const moveDialog = ref(false);
 const movingRow = ref<Row | null>(null);
 const moveTarget = ref<number | null>(null);
+const search = ref('');
 const snapshot = () => JSON.stringify(mode.value === 'article' ? form : categoryForm);
 const dirty = computed(() => mode.value !== 'list' && snapshot() !== baseline.value);
 function flatten(items: WikiCategory[], depth = 0): Array<WikiCategory & { depth: number }> { return items.flatMap(item => [{ ...item, depth }, ...flatten(item.children || [], depth + 1)]); }
 const flat = computed(() => flatten(categories.value));
 function tree(items: WikiCategory[]): Row[] { return items.map(category => ({ key:`category-${category.id}`, title:category.name, category, children:[...tree(category.children || []), ...articles.value.filter(a => a.category.id === category.id).map(article => ({ key:`article-${article.id}`, title:article.title, article }))] })); }
 const rows = computed(() => tree(categories.value));
+function articleMatches(article: Article, query: string) {
+  return [article.title, article.slug, article.summary, article.body_markdown ?? '', article.category.name, ...article.tags.map(tag => tag.name)]
+    .some(value => value.toLowerCase().includes(query));
+}
+function filterRows(items: Row[], query: string): Row[] {
+  return items.flatMap(row => {
+    if (!query) return [row];
+    if (row.article) return articleMatches(row.article, query) ? [row] : [];
+    if (row.title.toLowerCase().includes(query)) return [row];
+    const children = filterRows(row.children || [], query);
+    return children.length ? [{ ...row, children }] : [];
+  });
+}
+const filteredRows = computed(() => filterRows(rows.value, search.value.trim().toLowerCase()));
+function countRows(items: Row[]): number { return items.reduce((count, row) => count + 1 + countRows(row.children || []), 0); }
+const filteredCount = computed(() => countRows(filteredRows.value));
 async function canLeave() {
   if (busy.value) return false;
   if (!dirty.value) return true;
@@ -135,8 +152,8 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
   <div class="wiki-editor" v-loading="busy">
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <template v-if="mode === 'list'">
-      <div class="list-toolbar"><span>知识库目录 · {{ articles.length }} 篇词条</span><div><el-button :icon="FolderAdd" @click="editCategory()">新增分类</el-button><el-button :icon="Plus" @click="editArticle()">新建词条</el-button></div></div>
-      <AdminListTable :data="rows" row-key="key" default-expand-all empty-text="暂无分类，请先新增分类">
+      <div class="list-toolbar"><div class="list-heading"><span>知识库目录 · {{ articles.length }} 篇词条</span><small v-if="search.trim()">匹配 {{ filteredCount }} 项</small></div><div class="list-actions"><el-input v-model="search" aria-label="搜索知识库管理列表" placeholder="搜索标题、分类或标签…" clearable class="wiki-search" /><el-button :icon="FolderAdd" @click="editCategory()">新增分类</el-button><el-button :icon="Plus" @click="editArticle()">新建词条</el-button></div></div>
+      <AdminListTable :data="filteredRows" row-key="key" default-expand-all :empty-text="search.trim() ? '没有匹配的知识库内容' : '暂无分类，请先新增分类'">
         <el-table-column label="分类与词条" min-width="240"><template #default="{ row }"><button class="title-button" @click="row.article ? editArticle(row.article) : editCategory(row.category)">{{ row.title }}</button></template></el-table-column>
         <el-table-column label="类型" width="80"><template #default="{ row }">{{ row.article ? '词条' : '分类' }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag v-if="row.article" size="small" :type="row.article.status === 'published' ? 'success' : 'info'">{{ row.article.status === 'published' ? '已发布' : '草稿' }}</el-tag></template></el-table-column>
@@ -181,6 +198,11 @@ function countCategoryContents(category: WikiCategory): { categories: number; ar
 </template>
 <style scoped>
 .list-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.list-heading, .list-actions { display:flex; align-items:center; gap:12px; }
+.list-heading { flex-wrap:wrap; }
+.list-heading small { color:var(--el-text-color-secondary); }
+.list-actions { flex:1; justify-content:flex-end; flex-wrap:wrap; }
+.wiki-search { width:min(300px, 100%); }
 .title-button { border:0; background:none; color:inherit; cursor:pointer; text-align:left; padding:0; }
 .title-button:hover { color:var(--el-color-primary); }
 .category-form { max-width:620px; }

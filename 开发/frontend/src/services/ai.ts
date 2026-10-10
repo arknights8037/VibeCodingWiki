@@ -55,6 +55,18 @@ function parseMessage(message: unknown, onDelta?: (text: string) => void): Micro
   } as MicroMessage;
 }
 
+function hasInvalidToolArguments(message: MicroMessage): boolean {
+  return message.tool_calls?.some((call) => {
+    if (typeof call.function?.arguments !== 'string') return true;
+    try {
+      JSON.parse(call.function.arguments);
+      return false;
+    } catch {
+      return true;
+    }
+  }) ?? false;
+}
+
 async function responseError(response: Response): Promise<Error> {
   let detail = '';
   try {
@@ -81,31 +93,44 @@ export function createAdminAiCompletion(): MicroCompletion {
     const isBlockEdit = messages.some(
       (message) => message.role === 'system' && typeof message.content === 'string' && message.content.includes('块内编辑助手'),
     );
-    const response = await fetch(completionUrl(), {
-      method: 'POST',
-      credentials: 'include',
-      signal,
-      headers: {
-        Accept: 'text/event-stream, application/json',
-        'Content-Type': 'application/json',
-        ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()!) } : {}),
-      },
-      body: JSON.stringify({
-        messages,
-        ...(isBlockEdit ? {} : { tools: MICRO_AGENT_TOOLS, tool_choice: 'auto' }),
-        stream: false,
-      }),
-    });
-    if (!response.ok) throw await responseError(response);
+    let requestMessages = messages;
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      response = await fetch(completionUrl(), {
+        method: 'POST',
+        credentials: 'include',
+        signal,
+        headers: {
+          Accept: 'text/event-stream, application/json',
+          'Content-Type': 'application/json',
+          ...(csrfToken() ? { 'X-CSRF-Token': decodeURIComponent(csrfToken()!) } : {}),
+        },
+        body: JSON.stringify({
+          messages: requestMessages,
+          ...(isBlockEdit ? {} : { tools: MICRO_AGENT_TOOLS, tool_choice: 'auto' }),
+          stream: false,
+        }),
+      });
+      if (!response.ok) throw await responseError(response);
 
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/event-stream')) {
-      const data = await response.json() as { choices?: Array<{ message?: unknown }> };
-      const message = data.choices?.[0]?.message;
-      return parseMessage(message, onDelta);
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const data = await response.json() as { choices?: Array<{ message?: unknown }> };
+        const message = parseMessage(data.choices?.[0]?.message, onDelta);
+        if (!hasInvalidToolArguments(message) || attempt === 1) return message;
+        requestMessages = [{
+          role: 'system',
+          content: '上一次工具调用参数不是合法 JSON。请重新生成工具调用，arguments 必须是可被 JSON.parse 解析的严格 JSON 字符串，不要省略逗号、引号或转义换行。',
+        }, ...messages];
+        continue;
+      }
+
+      // Streaming responses cannot be retried after the body has started; keep
+      // the existing parser and surface a clear error if the provider sends one.
+      break;
     }
 
-    if (!response.body) throw new Error('AI 服务没有返回可读取的流。');
+    if (!response?.body) throw new Error('AI 服务没有返回可读取的流。');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const toolCalls = new Map<number, MicroToolCall>();
