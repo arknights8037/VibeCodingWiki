@@ -56,9 +56,9 @@ async def test_wiki_advanced_filters_and_special_characters(client):
     assert phrase.status_code == 200
     assert any(item["slug"] == "vibe-coding" for item in phrase.json()["items"])
 
-    tags = await client.get("/api/v1/wiki", params=[("tags", "vue"), ("tags", "frontend")])
+    tags = await client.get("/api/v1/wiki", params=[("tags", "ai"), ("tags", "workflow")])
     assert tags.status_code == 200
-    assert {item["slug"] for item in tags.json()["items"]} == {"vue-3"}
+    assert {item["slug"] for item in tags.json()["items"]} == {"vibe-coding"}
 
     special = await client.get(
         "/api/v1/wiki", params={"q": '" OR 1=1; DROP TABLE wiki_articles;--'}

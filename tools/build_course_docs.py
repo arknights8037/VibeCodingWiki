@@ -109,7 +109,7 @@ def add_requirement_doc() -> None:
         ]),
         ("3. 创意说明", [
             "本方案的核心创意是把教学内容和开放接口放在同一发布状态模型下。网页、REST 与 MCP 读取同一份发布数据，避免面向人和面向智能体的知识不一致；Skills 采用稳定 URL 与确定性 ZIP，使安装说明、版本和校验值可以复核。",
-            "课程不以框架语法为唯一主线，而以九步交付链组织：风险认知、需求拆解、规范驱动、环境与 Git、Vue 前端、FastAPI 后端、质量与安全、Docker 运维、MCP/Skills 生态。每个模块都包含实践和完成标准。",
+            "课程聚焦五个核心模块：风险认知、需求拆解、提示词与上下文、环境与 Git、测试与调试。每个模块都包含实践和完成标准。",
         ]),
         ("4. 竞品与差异", [
             "通用文档站擅长准确参考但学习路径分散；视频课程具备叙事性但查询和版本维护较弱；开源导航站便于发现项目却通常缺少教学上下文与审核闭环；通用 AI 助手能即时回答，但答案版本、来源和复用方式不稳定。",
@@ -134,7 +134,7 @@ def add_requirement_doc() -> None:
         cell.text = text
         set_cell_shading(cell, "BFE7DD")
     rows = [
-        ("F-01", "课程路径", "9 模块；目标、前置、正文、实践、完成标准", "Must"),
+        ("F-01", "课程路径", "9 模块，分基础、进阶、专业三个阶段；目标、前置、正文、实践、完成标准", "Must"),
         ("F-02", "Wiki 高级查询", "全文/短语/分类/标签/难度/时间/分页/排序", "Must"),
         ("F-03", "身份与进度", "Argon2；访问与可撤销刷新 Cookie；CSRF", "Must"),
         ("F-04", "项目投稿", "草稿—待审—发布/驳回；驳回可重投", "Must"),
@@ -167,12 +167,12 @@ def add_requirement_doc() -> None:
     document.add_heading("7. 课程与首批内容", level=1)
     modules = [
         "Vibe Coding 基本概念与风险", "问题定义和需求拆解", "提示词、上下文和规范驱动开发",
-        "开发环境、终端与 Git", "Vue 3 与 TypeScript 前端", "FastAPI 与 SQLite 后端",
-        "测试、调试、安全和人工审查", "Docker 部署与运行维护", "MCP 与 Agent Skills 开放生态",
+        "开发环境、终端与 Git",
+        "测试、调试、安全和人工审查",
     ]
     for index, module in enumerate(modules, 1):
         document.add_paragraph(f"模块 {index}　{module}", style="List Number")
-    document.add_paragraph("每个模块均提供完整示例课文；首批 Wiki 包含 AI Coding、Git、Vue、TypeScript、FastAPI、REST、Pydantic、SQLAlchemy、SQLite、FTS5、Docker、Compose、测试、调试、CSRF、RBAC、MCP、Agent Skills 等 20 个核心概念。")
+    document.add_paragraph("每个模块均提供完整示例课文；首批 Wiki 保留 Vibe Coding、AI Coding、工程提示、上下文窗口和 Git 五个核心词条。")
 
     document.add_heading("8. 非功能需求", level=1)
     add_bullets(document, [
@@ -270,7 +270,7 @@ def add_weekly_doc() -> None:
     add_bullets(document, [
         "明确 VibeCodingWiki 的用户、范围、角色和审核状态机。",
         "确定 Vue 3 + TypeScript / FastAPI / SQLite / Docker Compose 技术路线。",
-        "完成可运行工程骨架、9 模块课程与 20 个 Wiki 种子内容。",
+        "完成可运行工程骨架、9 模块课程与 5 个 Wiki 种子内容。",
         "形成需求、架构、接口、安全、贡献规范以及课程汇报制品。",
     ])
     document.add_heading("本周已生成制品（需团队复核后认领）", level=2)

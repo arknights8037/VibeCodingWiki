@@ -1,7 +1,8 @@
 """Initial schema and full-text index."""
 
+from pathlib import Path
+
 from alembic import op
-from app.models import Base
 
 revision = "0001_initial"
 down_revision = None
@@ -11,7 +12,12 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    Base.metadata.create_all(bind=bind)
+    # Freeze the baseline; importing live models here made historical
+    # migrations change whenever application models changed.
+    schema = Path(__file__).parents[1].joinpath("schema_0001.sql").read_text(encoding="utf-8")
+    for statement in schema.split(";"):
+        if statement.strip():
+            bind.exec_driver_sql(statement)
     bind.exec_driver_sql(
         "CREATE VIRTUAL TABLE IF NOT EXISTS wiki_fts USING fts5(title, summary, body_markdown, "
         "content='wiki_articles', content_rowid='id', tokenize='unicode61')"
@@ -40,4 +46,6 @@ def downgrade() -> None:
     for name in ("wiki_fts_au", "wiki_fts_ad", "wiki_fts_ai"):
         bind.exec_driver_sql(f"DROP TRIGGER IF EXISTS {name}")
     bind.exec_driver_sql("DROP TABLE IF EXISTS wiki_fts")
+    from app.models import Base
+
     Base.metadata.drop_all(bind=bind)

@@ -1,11 +1,11 @@
 import re
 from datetime import datetime
 
-from sqlalchemy import Select, func, or_, select, text
+from sqlalchemy import Select, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Difficulty, PublicationStatus, Tag, WikiArticle, article_tags
+from app.models import Category, Difficulty, PublicationStatus, Tag, WikiArticle, article_tags
 
 TOKEN_RE = re.compile(r'"([^"]{1,80})"|([\w\u4e00-\u9fff-]{1,80})')
 
@@ -37,7 +37,11 @@ async def search_wiki_articles(
         selectinload(WikiArticle.category), selectinload(WikiArticle.tags)
     )
     if category:
-        filters.append(WikiArticle.category.has(slug=category))
+        category_ids = select(Category.id).where(Category.slug == category).cte("category_descendants", recursive=True)
+        category_ids = category_ids.union(
+            select(Category.id).join(category_ids, Category.parent_id == category_ids.c.id)
+        )
+        filters.append(WikiArticle.category_id.in_(select(category_ids.c.id)))
     if difficulty:
         filters.append(WikiArticle.difficulty == difficulty)
     if updated_after:
@@ -54,8 +58,16 @@ async def search_wiki_articles(
         filters.append(WikiArticle.id.in_(articles_with_all_tags))
 
     ids: list[int] | None = None
-    phrase_part = f'"{phrase[:80]}"' if phrase.strip() else ""
-    fts_query = safe_fts_query(" ".join(part for part in (q, phrase_part) if part))
+    # Keep phrase and keyword filters independent: a failed keyword match must
+    # not accidentally fall back to matching only the phrase.
+    phrase = phrase.strip()
+    if phrase:
+        filters.append(or_(
+            WikiArticle.title.contains(phrase, autoescape=True),
+            WikiArticle.summary.contains(phrase, autoescape=True),
+            WikiArticle.body_markdown.contains(phrase, autoescape=True),
+        ))
+    fts_query = safe_fts_query(q)
     if fts_query:
         rows = await session.execute(
             text("SELECT rowid FROM wiki_fts WHERE wiki_fts MATCH :q ORDER BY bm25(wiki_fts)"),
@@ -65,32 +77,38 @@ async def search_wiki_articles(
         if ids:
             filters.append(WikiArticle.id.in_(ids))
         else:
-            like = f"%{(phrase or q)[:100]}%"
+            literal = q.strip()[:100]
             filters.append(
                 or_(
-                    WikiArticle.title.like(like),
-                    WikiArticle.summary.like(like),
-                    WikiArticle.body_markdown.like(like),
+                    WikiArticle.title.contains(literal, autoescape=True),
+                    WikiArticle.summary.contains(literal, autoescape=True),
+                    WikiArticle.body_markdown.contains(literal, autoescape=True),
                 )
             )
+    elif q.strip():
+        filters.append(or_(
+            WikiArticle.title.contains(q.strip(), autoescape=True),
+            WikiArticle.summary.contains(q.strip(), autoescape=True),
+            WikiArticle.body_markdown.contains(q.strip(), autoescape=True),
+        ))
 
     statement = statement.where(*filters).distinct()
     count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
     total = int(await session.scalar(count_statement) or 0)
 
-    if sort == "updated_desc":
-        statement = statement.order_by(WikiArticle.updated_at.desc())
+    if sort == "order_asc":
+        statement = statement.order_by(WikiArticle.order_index.asc(), WikiArticle.id.asc())
+    elif sort == "updated_desc":
+        statement = statement.order_by(WikiArticle.updated_at.desc(), WikiArticle.id)
     elif sort == "title_asc":
-        statement = statement.order_by(WikiArticle.title.asc())
+        statement = statement.order_by(WikiArticle.title.asc(), WikiArticle.id)
     elif ids:
         ordering = {item_id: index for index, item_id in enumerate(ids)}
-        statement = statement.order_by(WikiArticle.updated_at.desc())
+        statement = statement.order_by(case(ordering, value=WikiArticle.id), WikiArticle.id)
     else:
-        statement = statement.order_by(WikiArticle.updated_at.desc())
+        statement = statement.order_by(WikiArticle.updated_at.desc(), WikiArticle.id)
 
     result = list(
         (await session.scalars(statement.offset((page - 1) * page_size).limit(page_size))).unique()
     )
-    if ids and sort == "relevance":
-        result.sort(key=lambda article: ordering.get(article.id, len(ordering)))
     return result, total

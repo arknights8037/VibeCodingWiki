@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     admin_email: str = "admin@example.com"
     admin_password: str = "ChangeMe123!"
     allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost"])
+    frontend_url: str = "http://127.0.0.1:5173"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VCW_", extra="ignore")
 

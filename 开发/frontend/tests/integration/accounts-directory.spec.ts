@@ -1,0 +1,56 @@
+import { expect, test } from '@playwright/test';
+
+test('login and registration are standalone pages and preserve the intended destination', async ({ page }) => {
+  await page.goto('/auth?returnTo=/projects/mine');
+  await expect(page).toHaveURL('/login?returnTo=/projects/mine');
+  await expect(page.locator('.docs-sidebar')).toHaveCount(0);
+  await expect(page.locator('.docs-global-header')).toHaveCount(0);
+  await page.getByRole('link', { name: '立即注册', exact: true }).click();
+  await expect(page).toHaveURL('/register?returnTo=/projects/mine');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '创建账号' })).toBeVisible();
+  await page.getByLabel('显示名称', { exact: true }).fill('独立页面用户');
+  await page.getByLabel('邮箱', { exact: true }).fill(`standalone-${Date.now()}@example.com`);
+  await page.getByLabel('密码', { exact: true }).fill('StrongPassword123!');
+  await page.getByLabel('确认密码', { exact: true }).fill('StrongPassword123!');
+  await page.getByRole('button', { name: '注册并登录', exact: true }).click();
+  await expect(page).toHaveURL('/projects/mine');
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await page.goto('/login?returnTo=//example.com');
+  await page.getByLabel('邮箱', { exact: true }).fill('admin@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('wrongPassword123!');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByLabel('密码', { exact: true }).fill('AdminPassword123!');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto('/register');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test('top navigation replaces the directory and directory entries open the matching content', async ({ page }) => {
+  await page.goto('/');
+  const tabs = page.getByRole('navigation', { name: '页面切换' });
+  await expect(page.getByRole('navigation', { name: '课程目录' })).toBeVisible();
+  await tabs.getByRole('link', { name: '知识库', exact: true }).click();
+  const wikiDirectory = page.getByRole('navigation', { name: '知识库目录' });
+  await expect(wikiDirectory).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '课程目录' })).toHaveCount(0);
+  await wikiDirectory.locator('.docs-course-link').first().click();
+  await expect(page.locator('.markdown-body')).not.toBeEmpty();
+  await page.reload();
+  await expect(wikiDirectory).toBeVisible();
+  await tabs.getByRole('link', { name: '作品', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: '作品目录' })).toBeAttached();
+  await tabs.getByRole('link', { name: '工具', exact: true }).click();
+  const toolsDirectory = page.getByRole('navigation', { name: '工具目录' });
+  await toolsDirectory.locator('.docs-course-link').first().click();
+  await expect(page).toHaveURL(/\/skills\/[^/]+\/[^/]+$/);
+  await expect(page.locator('.skill-detail .markdown-body')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.skill-detail .markdown-body')).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole('button', { name: '打开学习目录' }).click();
+  await expect(toolsDirectory).toBeInViewport();
+});

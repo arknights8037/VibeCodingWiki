@@ -15,12 +15,14 @@ VibeCodingWiki 解决初学者资料碎片化、概念理解与代码实践脱�
 
 ## 3. 核心用例
 
-1. 学习者按 9 个模块查看目标、前置知识、正文和实践，登录后标记完成。
+1. 学习者按基础、进阶、专业三个阶段和 9 个模块查看目标、前置知识、正文和实践，登录后标记完成。
 2. 访客按关键词、精确短语、分类、标签、难度、更新时间与排序组合查询 Wiki。
 3. 用户保存草稿并提交审核；驳回后修改再提交；作者不能审核自己的项目。
-4. reviewer 记录理由并通过/驳回，admin 可取消发布；每次状态变化保留 ReviewEvent 与 AuditLog。
-5. 客户端发现并调用 6 个 MCP 工具，只获得发布态数据。
+4. reviewer 记录理由并通过/驳回，admin 可取消发布；每次状态变化保留 ReviewEvent 与 AuditLog，并聚合为用户通知。
+5. 客户端发现并调用 7 个公开 MCP 工具，只获得发布态数据；管理员可通过独立端点调用受控写入工具。
 6. admin 上传 Skill ZIP，系统校验、计算 SHA-256 并通过固定 URL 分发。
+7. 登录用户从头像进入账户中心，编辑用户名、真名和头像文件，管理密码、MCP 凭据、投稿和通知。
+8. admin 配置 GitHub/Gitee OAuth 凭据，用户通过官方授权接口绑定账号。
 
 ## 4. 业务规则
 
@@ -37,7 +39,7 @@ VibeCodingWiki 解决初学者资料碎片化、概念理解与代码实践脱�
 
 ### 课程
 
-- 固定 9 模块排序，正文支持 Markdown。
+- 固定 9 模块排序，按基础、进阶、专业三个阶段组织，正文支持 Markdown。
 - 每模块至少一篇完整示例课文，包含学习目标、前置、目录、实践和完成标准。
 - 登录用户可完成/撤销完成，重复操作幂等。
 
@@ -52,11 +54,14 @@ VibeCodingWiki 解决初学者资料碎片化、概念理解与代码实践脱�
 - 投稿字段包括名称、slug、摘要、仓库 URL、许可证、技术栈与说明。
 - 管理后台分为审核、用户、Wiki、Skills、审计；reviewer 只看到审核。
 - 账号停用后不能登录或刷新。
+- 头像上传限制为 JPG、PNG、WEBP、GIF，大小不超过 2MB；文件持久化在数据目录。
+- 注册和所有修改密码表单必须提供确认密码；服务端仍校验密码复杂度。
 
 ### MCP / Skills
 
 - MCP 使用 Streamable HTTP，入口 `/mcp`，目标协议版本 `2026-07-28`。
-- 工具：`search_wiki`、`get_wiki_article`、`list_courses`、`get_lesson`、`list_projects`、`list_skills`。
+- 公开工具：`search_wiki`、`get_wiki_article`、`list_wiki_categories`、`list_courses`、`get_lesson`、`list_projects`、`list_skills`。
+- 管理员端点提供受后台开关控制的 `update_wiki_article`、`create_wiki_article`、`delete_wiki_article`、`move_wiki_article`、分类维护工具、`update_lesson` 与 `update_course`。
 - Skills 提供目录 API、原始 `SKILL.md`、ZIP 下载与 SHA-256。
 
 ## 6. 非功能需求
@@ -69,7 +74,7 @@ VibeCodingWiki 解决初学者资料碎片化、概念理解与代码实践脱�
 
 ## 7. 范围边界
 
-不实现评论、点赞、收藏、举报、通知、OAuth、邮件找回、多租户、对象存储、消息队列、搜索集群和多后端实例。若并发写入或数据规模超出课程部署，后续迁移 PostgreSQL。
+不实现评论、点赞、收藏、举报、邮件找回、多租户、对象存储、消息队列、搜索集群和多后端实例。通知目前仅覆盖投稿状态；头像使用本地数据目录。若并发写入或数据规模超出课程部署，后续迁移 PostgreSQL。
 
 ## 8. 人工绘图占位
 

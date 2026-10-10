@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, apiError } from "@/services/api";
 import type { WikiArticle } from "@/types";
@@ -9,11 +9,11 @@ const router = useRouter();
 const filters = reactive({
   q: String(route.query.q || ""),
   phrase: "",
-  category: "",
+  category: String(route.query.category || ""),
   tags: "",
   difficulty: "",
   updated_after: "",
-  sort: "relevance",
+  sort: "order_asc",
   page: 1,
 });
 const categories = ref<{ slug: string; name: string }[]>([]);
@@ -21,16 +21,19 @@ const articles = ref<WikiArticle[]>([]);
 const total = ref(0);
 const loading = ref(false);
 const error = ref("");
-const pageSize = 10;
+const pageSize = 50;
 const lifecycle = new AbortController();
+let searchVersion = 0;
 
 async function search() {
+  const version = ++searchVersion;
   loading.value = true;
   error.value = "";
   try {
     const response = await api.get<{ items: WikiArticle[]; total: number }>(
       "/wiki",
       {
+        signal: lifecycle.signal,
         params: {
           q: filters.q || undefined,
           phrase: filters.phrase || undefined,
@@ -51,15 +54,23 @@ async function search() {
         },
       },
     );
+    if (version !== searchVersion || lifecycle.signal.aborted) return;
+    await router.replace({ query: { ...(filters.q ? { q: filters.q } : {}), ...(filters.category ? { category: filters.category } : {}) } });
+    if (version !== searchVersion || lifecycle.signal.aborted) return;
     articles.value = response.data.items;
     total.value = response.data.total;
-    await router.replace({ query: filters.q ? { q: filters.q } : {} });
   } catch (reason) {
-    error.value = apiError(reason);
+    if (version === searchVersion && !lifecycle.signal.aborted) error.value = apiError(reason);
   } finally {
-    loading.value = false;
+    if (version === searchVersion) loading.value = false;
   }
 }
+
+watch(() => [route.query.q, route.query.category], ([query, category]) => {
+  if (String(query || '') !== filters.q || String(category || '') !== filters.category) {
+    filters.q = String(query || ''); filters.category = String(category || ''); filters.page = 1; void search();
+  }
+});
 
 function changePage(delta: number) {
   filters.page += delta;
@@ -67,10 +78,11 @@ function changePage(delta: number) {
 }
 
 onMounted(async () => {
-  categories.value = (
-    await api.get<{ slug: string; name: string }[]>("/wiki/categories")
-  ).data;
-  await search();
+  const initialSearch = search();
+  try { categories.value = (await api.get<{ slug: string; name: string }[]>("/wiki/categories")).data; }
+  catch { /* Search remains available when category options cannot load. */ }
+  await initialSearch;
+  if (lifecycle.signal.aborted) return;
   const context = document.modelContext;
   if (context?.registerTool) {
     await Promise.resolve(
@@ -116,9 +128,6 @@ onBeforeUnmount(() => lifecycle.abort());
 
 <template>
   <div class="page">
-    <div class="eyebrow">Advanced Query</div>
-    <h1>技术 Wiki</h1>
-    <p class="lede">搜索已发布词条，并按分类、标签、难度和更新时间缩小结果。</p>
     <form
       class="filter-bar"
       @submit.prevent="
@@ -126,12 +135,6 @@ onBeforeUnmount(() => lifecycle.abort());
         search();
       "
     >
-      <input v-model="filters.q" aria-label="关键词" placeholder="关键词" />
-      <input
-        v-model="filters.phrase"
-        aria-label="精确短语"
-        placeholder="精确短语"
-      />
       <select v-model="filters.category" aria-label="分类">
         <option value="">全部分类</option>
         <option v-for="item in categories" :key="item.slug" :value="item.slug">
@@ -145,16 +148,12 @@ onBeforeUnmount(() => lifecycle.abort());
         <option value="advanced">高级</option>
       </select>
       <select v-model="filters.sort" aria-label="排序">
+        <option value="order_asc">目录顺序</option>
         <option value="relevance">相关度</option>
         <option value="updated_desc">最近更新</option>
         <option value="title_asc">标题</option>
       </select>
       <button type="submit">查询</button>
-      <input
-        v-model="filters.tags"
-        aria-label="标签"
-        placeholder="标签，以逗号分隔"
-      />
       <label class="compact-label"
         >更新晚于<input v-model="filters.updated_after" type="date"
       /></label>
@@ -162,7 +161,7 @@ onBeforeUnmount(() => lifecycle.abort());
     <p class="status-line" :class="{ error }">
       {{ loading ? "正在查询…" : error || `找到 ${total} 个词条` }}
     </p>
-    <div class="result-list">
+    <div v-if="!loading" class="result-list">
       <RouterLink
         v-for="article in articles"
         :key="article.id"

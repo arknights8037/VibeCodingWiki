@@ -1,0 +1,8 @@
+.markdown-card { border:1px solid #dce2e7; border-left:3px solid #7898b6; border-radius:6px; background:#f6f8fa; padding:16px 20px; margin:20px 0; color:inherit; overflow-wrap:anywhere; }
+.markdown-card > :first-child { margin-top:0; }
+.markdown-card > :last-child { margin-bottom:0; }
+.markdown-card h2, .markdown-card h3 { font-size:16px; border-bottom:0; padding-bottom:0; }
+.docs-shell[data-theme='dark'] .markdown-card { background:#2b302e; border-color:#45544b; border-left-color:#8aa6b8; }
+@media(max-width:600px) { .markdown-card { padding:12px 14px; } }
+
+.markdown-card-preview { white-space:normal !important; font-family:inherit !important; background:transparent !important; padding:0 !important; }

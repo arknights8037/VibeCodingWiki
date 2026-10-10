@@ -3,12 +3,13 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.database import SessionLocal, init_database
 from app.models import (
     Category,
+    ContentCategory,
     Course,
     Difficulty,
     Lesson,
@@ -21,13 +22,51 @@ from app.models import (
     WikiArticle,
 )
 from app.security import hash_password
-from app.seed_data import COURSES, WIKI
+from app.seed_data import COURSES, RETIRED_COURSE_SLUGS, RETIRED_WIKI_SLUGS, WIKI
+from app.services.block_content import markdown_to_content
+from app.services.lesson_content import with_legacy_cards
 from app.services.skills import build_skill_archive
 
 
 async def seed() -> None:
     await init_database()
     async with SessionLocal() as session:
+        # Keep a stable default for legacy API clients that do not send a
+        # content category yet. Administrators can add more categories later.
+        for kind, slug, name in (
+            ("project", "general", "综合项目"),
+            ("skill", "general", "通用技能"),
+        ):
+            category = await session.scalar(
+                select(ContentCategory).where(
+                    ContentCategory.kind == kind,
+                    ContentCategory.slug == slug,
+                )
+            )
+            if not category:
+                session.add(ContentCategory(kind=kind, slug=slug, name=name, order_index=0))
+        await session.flush()
+        # Keep historical learning progress while removing retired teaching content
+        # from public pages, search results, and MCP resources.
+        retired_courses = select(Course.id).where(Course.slug.in_(RETIRED_COURSE_SLUGS))
+        await session.execute(
+            update(Lesson)
+            .where(Lesson.course_id.in_(retired_courses))
+            .values(status=PublicationStatus.archived)
+        )
+        await session.execute(
+            update(Course)
+            .where(Course.slug.in_(RETIRED_COURSE_SLUGS))
+            .values(status=PublicationStatus.archived)
+        )
+        await session.execute(
+            update(WikiArticle)
+            .where(
+                WikiArticle.slug.in_(RETIRED_WIKI_SLUGS),
+                WikiArticle.status != PublicationStatus.archived,
+            )
+            .values(status=PublicationStatus.archived)
+        )
         admin = await session.scalar(select(User).where(User.email == settings.admin_email.lower()))
         if not admin:
             admin = User(
@@ -46,31 +85,42 @@ async def seed() -> None:
                     slug=item["slug"],
                     title=item["title"],
                     summary=item["summary"],
-                    prerequisites="按课程顺序学习；第一模块无前置要求。"
-                    if order_index > 1
-                    else "无",
-                    difficulty=Difficulty.beginner if order_index < 6 else Difficulty.intermediate,
+                    prerequisites=item["prerequisites"],
+                    difficulty=Difficulty(item["difficulty"]),
                     order_index=order_index,
                     status=PublicationStatus.published,
                 )
                 session.add(course)
                 await session.flush()
-            lesson_slug = f"{item['slug']}-lesson"
-            if not await session.scalar(select(Lesson).where(Lesson.slug == lesson_slug)):
-                session.add(
-                    Lesson(
-                        course_id=course.id,
-                        slug=lesson_slug,
-                        title=item["title"],
-                        objective=item["objective"],
-                        body_markdown=item["body"],
-                        practice=item["practice"],
-                        completion_criteria=item["criteria"],
-                        estimated_minutes=35,
-                        order_index=1,
-                        status=PublicationStatus.published,
-                    )
+            else:
+                course.title = item["title"]
+                course.summary = item["summary"]
+                course.prerequisites = item["prerequisites"]
+                course.difficulty = Difficulty(item["difficulty"])
+                course.order_index = order_index
+            for lesson_order, lesson_item in enumerate(item["lessons"], start=1):
+                body_markdown = with_legacy_cards(
+                    lesson_item["body"],
+                    lesson_item["objective"],
+                    lesson_item["practice"],
+                    lesson_item["criteria"],
                 )
+                existing_lesson = await session.scalar(
+                    select(Lesson).where(Lesson.slug == lesson_item["slug"])
+                )
+                if not existing_lesson:
+                    existing_lesson = Lesson(course_id=course.id, slug=lesson_item["slug"])
+                    session.add(existing_lesson)
+                existing_lesson.course_id = course.id
+                existing_lesson.title = lesson_item["title"]
+                existing_lesson.objective = ""
+                existing_lesson.body_markdown = body_markdown
+                existing_lesson.content_json = markdown_to_content(body_markdown)
+                existing_lesson.practice = ""
+                existing_lesson.completion_criteria = ""
+                existing_lesson.estimated_minutes = 40
+                existing_lesson.order_index = lesson_order
+                existing_lesson.status = PublicationStatus.published
 
         category_cache: dict[str, Category] = {}
         tag_cache: dict[str, Tag] = {}
@@ -97,12 +147,14 @@ async def seed() -> None:
                     await session.flush()
                 tag_cache[tag_name] = tag
                 tags.append(tag)
+            body_markdown = f"# {title}\n\n{body}\n\n## 使用建议\n\n结合课程示例运行和验证，不要只记住定义。"
             session.add(
                 WikiArticle(
                     slug=slug,
                     title=title,
                     summary=summary,
-                    body_markdown=f"# {title}\n\n{body}\n\n## 使用建议\n\n结合课程示例运行和验证，不要只记住定义。",
+                    body_markdown=body_markdown,
+                    content_json=markdown_to_content(body_markdown),
                     difficulty=Difficulty(difficulty),
                     category=category,
                     tags=tags,

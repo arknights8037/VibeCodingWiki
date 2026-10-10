@@ -2,15 +2,19 @@
   "name": "vibecodingwiki-frontend",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@12.3.4",
+  "packageManager": "npm@11.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vue-tsc -b && vite build",
-    "test": "vitest run",
-    "test:e2e": "playwright test"
+    "dev": "vite --config vite.config.ts --host 127.0.0.1",
+    "build": "vue-tsc -b && vite build --config vite.config.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "verify:editor-package": "node scripts/verify-editor-package.mjs",
+    "test:e2e": "playwright test --config playwright.config.ts",
+    "test:integration": "playwright test --config playwright.integration.config.ts"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@my-notebook/vue-block-editor": "file:vendor/my-notebook-vue-block-editor-0.1.0.tgz",
     "axios": "^1.12.2",
     "dompurify": "^3.2.7",
     "element-plus": "^2.11.5",
@@ -21,10 +25,12 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.7.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^27.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.1.9",
     "vitest": "^3.2.4",

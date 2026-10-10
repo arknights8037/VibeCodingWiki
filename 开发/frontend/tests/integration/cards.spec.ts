@@ -1,0 +1,38 @@
+import { test, expect } from '@playwright/test';
+
+test('cards insert visually and persist as Markdown without fixed teaching fields', async ({ page }) => {
+  await page.goto('/login?returnTo=/admin?section=courses');
+  await page.getByLabel('邮箱', {exact:true}).fill('admin@example.com');
+  await page.getByLabel('密码', {exact:true}).fill('AdminPassword123!');
+  await page.getByRole('button', {name:'登录',exact:true}).click();
+  await page.getByRole('button', {name:'新增无分类条目',exact:true}).click();
+  await expect(page.getByLabel('学习目标', {exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('成果检查', {exact:true})).toHaveCount(0);
+  await page.getByLabel('条目标题', {exact:true}).fill('卡片正文测试');
+  await page.getByLabel('条目英文标识', {exact:true}).fill('中文标识');
+  await page.getByRole('button', {name:'保存课程',exact:true}).click();
+  await expect(page.locator('.el-form-item__error')).toContainText('不能含中文');
+  await page.getByLabel('条目英文标识', {exact:true}).fill(' Card_Body Test ');
+  const editor=page.locator('.editor-shell__content[contenteditable="true"]');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await editor.press('/');
+  await page.getByRole('option', {name:/卡片/}).click();
+  await page.getByLabel('条目标题', {exact:true}).click();
+  await expect(page.locator('.editor-shell .markdown-card')).toBeVisible();
+  await page.getByRole('button', {name:'保存课程',exact:true}).click();
+  await expect(page.getByText('课程已保存',{exact:true})).toBeVisible();
+  await expect(page.getByText('草稿不在前台目录展示，发布后即可看到。', {exact:true})).toBeVisible();
+  expect((await page.request.get('/api/v1/courses/card-body-test')).status()).toBe(404);
+  await page.getByRole('button', {name:'保存并发布',exact:true}).click();
+  await expect(page.getByRole('button', {name:'保存并发布',exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('条目英文标识', {exact:true})).toHaveValue('card-body-test');
+  const saved=await (await page.request.get('/api/v1/courses/card-body-test')).json();
+  expect(saved.lessons[0].body_markdown).toContain('```card');
+  expect(saved.lessons[0].body_markdown).not.toContain('<section');
+  expect(saved.lessons[0].objective).toBe('');
+  await page.goto('/courses/card-body-test');
+  await expect(page.locator('.markdown-body').first()).toBeVisible();
+  await expect(page.locator('.practice-block')).toHaveCount(0);
+  await expect(page.getByRole('navigation', {name:'课程目录',exact:true}).getByRole('link', {name:'卡片正文测试',exact:true})).toBeVisible();
+});

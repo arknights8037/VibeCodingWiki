@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -9,8 +10,47 @@ from app.database import get_session
 from app.models import Category, Difficulty, PublicationStatus, WikiArticle
 from app.schemas import CategoryOut, Page, WikiDetail, WikiSummary
 from app.services.search import search_wiki_articles
+from app.services.wiki_summary import display_wiki_summary
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
+
+
+class WikiTerm(BaseModel):
+    slug: str
+    title: str
+    summary: str
+
+
+@router.get("/terms", response_model=list[WikiTerm])
+async def list_terms(
+    response: Response, session: AsyncSession = Depends(get_session)
+) -> list[WikiTerm]:
+    """Live, lightweight index for automatic course annotations; no pagination."""
+    response.headers["Cache-Control"] = "no-store"
+    rows = await session.execute(
+        select(WikiArticle.slug, WikiArticle.title, WikiArticle.summary, WikiArticle.body_markdown)
+        .where(WikiArticle.status == PublicationStatus.published)
+        .order_by(WikiArticle.id)
+    )
+    # A title is the key used by the course annotator. Keep the first
+    # published article as the stable canonical definition when legacy seed
+    # data contains the same title in more than one category.
+    terms: list[WikiTerm] = []
+    seen_titles: set[str] = set()
+    for row in rows:
+        title = row.title.strip()
+        key = title.casefold()
+        if not title or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        terms.append(
+            WikiTerm(
+                slug=row.slug,
+                title=title,
+                summary=display_wiki_summary(row.summary, row.body_markdown),
+            )
+        )
+    return terms
 
 
 @router.get("", response_model=Page)
@@ -21,7 +61,7 @@ async def search_wiki(
     tags: list[str] = Query(default=[]),
     difficulty: Difficulty | None = None,
     updated_after: datetime | None = None,
-    sort: str = Query(default="relevance", pattern=r"^(relevance|updated_desc|title_asc)$"),
+    sort: str = Query(default="relevance", pattern=r"^(relevance|order_asc|updated_desc|title_asc)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=50),
     session: AsyncSession = Depends(get_session),
@@ -48,7 +88,17 @@ async def search_wiki(
 
 @router.get("/categories", response_model=list[CategoryOut])
 async def list_categories(session: AsyncSession = Depends(get_session)) -> list[Category]:
-    return list(await session.scalars(select(Category).order_by(Category.name)))
+    categories = list(await session.scalars(select(Category).order_by(Category.order_index, Category.id)))
+    visible = set(await session.scalars(
+        select(WikiArticle.category_id).where(WikiArticle.status == PublicationStatus.published).distinct()
+    ))
+    by_id = {category.id: category for category in categories}
+    for category_id in list(visible):
+        parent_id = by_id[category_id].parent_id
+        while parent_id is not None and parent_id not in visible:
+            visible.add(parent_id)
+            parent_id = by_id[parent_id].parent_id
+    return [category for category in categories if category.id in visible]
 
 
 @router.get("/{slug}", response_model=WikiDetail)

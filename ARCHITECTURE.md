@@ -19,6 +19,7 @@ Nginx :80 ── static Vue SPA
                        │
                        ▼
              SQLite + named data volume
+                       └── media/avatars（用户头像文件）
 ```
 
 浏览器与后端同源，避免 CORS、Cookie 与 CSRF 配置分叉。Nginx 只负责静态文件与反向代理，应用约束集中在 FastAPI。
@@ -48,7 +49,11 @@ Nginx :80 ── static Vue SPA
 
 ### MCP 生命周期
 
-MCP ASGI 应用挂载在 FastAPI 最后一个路由；顶层 lifespan 显式进入 `mcp.session_manager.run()`，避免挂载子应用的 lifespan 不执行。MCP 函数重新进行发布态过滤，不经过后台端点。
+公开 MCP ASGI 应用挂载在 FastAPI 最后一个路由；管理员写入端点 `/mcp/admin` 在其前面挂载并始终校验 Bearer 凭证。顶层 lifespan 显式进入两个 MCP session manager，避免挂载子应用的 lifespan 不执行。公开 MCP 函数重新进行发布态过滤，管理员写入函数记录独立审计事件。
+
+### 账户中心与 OAuth
+
+账户中心沿用文档站 ShellLayout 的顶部品牌头部，头像入口进入账户路由后隐藏课程目录和其他页面内容，仅呈现账户二级菜单。个人资料和安全操作通过受 CSRF 保护的 REST 接口保存；头像以 multipart 上传至数据目录并通过 `/media` 静态挂载访问。管理员在 `/admin?section=mcp` 配置 GitHub/Gitee OAuth 凭据，用户绑定时经过官方授权页、state Cookie 校验和官方用户接口读取用户名，不在浏览器保存第三方令牌。
 
 ## SQLite 设计
 

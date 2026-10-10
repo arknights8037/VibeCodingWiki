@@ -9,6 +9,10 @@ const route = useRoute();
 const editingId = Number(route.query.edit || 0);
 const error = ref("");
 const saving = ref(false);
+const saveOnly = ref(false);
+const loaded = ref(!editingId);
+const savedId = ref(editingId);
+const categories = ref<{ id:number; name:string }[]>([]);
 const form = reactive({
   name: "",
   slug: "",
@@ -18,6 +22,7 @@ const form = reactive({
   demo_url: "",
   license_name: "MIT",
   tech_stack: "",
+  content_category_id: 0,
 });
 
 onMounted(async () => {
@@ -36,13 +41,17 @@ onMounted(async () => {
       demo_url: item.demo_url || "",
       license_name: item.license_name,
       tech_stack: item.tech_stack.join(", "),
+      content_category_id: item.content_category_id || 0,
     });
+    loaded.value = true;
   } catch (reason) {
     error.value = apiError(reason) || "投稿不可编辑";
   }
 });
+onMounted(async () => { try { categories.value = (await api.get<{id:number;name:string}[]>("/content-categories?kind=project")).data; } catch {} });
 
 async function submit() {
+  if (saving.value || !loaded.value) return;
   saving.value = true;
   error.value = "";
   try {
@@ -54,10 +63,11 @@ async function submit() {
         .map((item) => item.trim())
         .filter(Boolean),
     };
-    const project = editingId
-      ? (await api.put(`/projects/${editingId}`, payload)).data
+    const project = savedId.value
+      ? (await api.put(`/projects/${savedId.value}`, payload)).data
       : (await api.post("/projects", payload)).data;
-    await api.post(`/projects/${project.id}/submit`);
+    savedId.value = project.id;
+    if (!saveOnly.value) await api.post(`/projects/${project.id}/submit`);
     await router.push("/projects/mine");
   } catch (reason) {
     error.value = apiError(reason);
@@ -69,12 +79,9 @@ async function submit() {
 
 <template>
   <div class="page narrow">
-    <div class="eyebrow">Submission</div>
-    <h1>{{ editingId ? "修改并重新提交" : "提交开源项目" }}</h1>
-    <p class="lede">
-      提交后进入人工审核。仓库必须公开，并清楚说明许可证、用途和运行方法。
-    </p>
     <form class="form-grid form-panel" @submit.prevent="submit">
+      <p v-if="!loaded && !error" role="status">正在加载投稿内容…</p>
+      <fieldset :disabled="!loaded || saving" class="submission-fields">
       <label
         >项目名称<input v-model="form.name" required maxlength="160"
       /></label>
@@ -98,15 +105,21 @@ async function submit() {
         >公开仓库地址<input v-model="form.repository_url" required type="url"
       /></label>
       <label>演示地址 可选<input v-model="form.demo_url" type="url" /></label>
+      <label>内容分区<select v-model.number="form.content_category_id" required><option :value="0" disabled>请选择分区</option><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
       <div class="split">
         <label>许可证<input v-model="form.license_name" required /></label
         ><label>技术栈 逗号分隔<input v-model="form.tech_stack" /></label>
       </div>
       <div class="form-actions">
-        <button type="submit" :disabled="saving">
+        <button type="submit" :disabled="saving || !loaded" @click="saveOnly = true">保存草稿</button>
+        <button type="submit" :disabled="saving || !loaded" @click="saveOnly = false">
           {{ saving ? "提交中…" : "保存并提交审核" }}</button
         ><span class="error">{{ error }}</span>
       </div>
+      </fieldset>
     </form>
   </div>
 </template>
+<style scoped>
+.submission-fields { display: grid; gap: 18px; margin: 0; padding: 0; border: 0; min-width: 0; }
+</style>
